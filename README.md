@@ -132,7 +132,10 @@ You should have Python (3.10) and pip installed on your machine. If you don't ha
 
 ### To run on HPC with Slurm:
 
-1. Edit the '.env' file to update the variables with the correct paths and settings.
+1. Edit the '.env' file, according to the example 'example.env' file, to update the variables with the correct paths and settings. Then run the 'source' command to load the variables.
+    ```sh
+    source .env
+    ```
 2. Run the 'run_llm.sh' script to submit the job to the HPC.
     ```sh
     sbatch --job-name=$JOB_NAME.$RUN_TYPE \
@@ -144,6 +147,7 @@ You should have Python (3.10) and pip installed on your machine. If you don't ha
     --gres=$GRES \
     --mem=$MEM \
     --output=$OUTPUT_DIR/$JOB_NAME.$RUN_TYPE.txt \
+    --export=ENV_DIR=$ENV_DIR \
     parallel.slurm 
     ```
 
