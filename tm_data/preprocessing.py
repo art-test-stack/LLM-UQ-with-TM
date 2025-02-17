@@ -43,6 +43,7 @@ class GradStats:
 @dataclass
 class InputData(GradStats):
     test_loss: float | None = None
+    var_test_loss: float | None = None
     epoch: int | None = None
     batch_size: int | None = None
 
@@ -54,20 +55,24 @@ class InputCSV:
             self.path = self.path.with_suffix('.csv')
         if not self.path.exists():
             create_csv(self.path)
-        self.current = InputData()
-        self.current_grads = []
         self.model = model
+        self.init_data()
+
+    def init_data(self, last_test_loss: Union[float, None] = None) -> None:
+        self.current = InputData()
         self.clean_grads()
-        
+        self.last_test_loss = last_test_loss
+
     def __call__(self, test_loss: float) -> None:
         assert self.current.batch_size, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
         assert self.current.epoch or self.current.epoch == 0, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
 
         self.current.test_loss = test_loss
+        self.current.var_test_loss = self.last_test_loss - test_loss if self.last_test_loss else - test_loss
         # add a way to store loss variations
         self.compute_model_stats()
         self.update_csv()
-        self.clean_grads()
+        self.init_data(last_test_loss=test_loss)
     
     def update_hyperparameters(self, epoch: int, batch_size: int) -> None:
         self.current.epoch = epoch
@@ -188,15 +193,13 @@ def store_data(
     spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min = get_tensor_stats(all_spectras)
     spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min = get_tensor_stats(all_ll_spectrums)
 
-    # grad_alpha, grad_beta = compute_beta_dist_params(grad_mean, grad_std)
-    # grad_ll_alpha, grad_ll_beta = compute_beta_dist_params(grad_ll_mean, grad_ll_std)
     spectrum_alpha, spectrum_beta = compute_beta_dist_params(spectrum_mean, spectrum_std)
     spectrum_ll_alpha, spectrum_ll_beta = compute_beta_dist_params(spectrum_ll_mean, spectrum_ll_std)
 
     input_data = InputData(
-        grad_mean, grad_median, grad_std, grad_max, grad_min, # grad_alpha, grad_beta,
+        grad_mean, grad_median, grad_std, grad_max, grad_min,
         spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min, spectrum_alpha, spectrum_beta,
-        grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min, # grad_ll_alpha, grad_ll_beta,
+        grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min,
         spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min, spectrum_ll_alpha, spectrum_ll_beta,
         epoch, batch_size
     )

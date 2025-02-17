@@ -121,11 +121,6 @@ class Trainer:
     
     def save_model(self):
         path = f"models/{self.name}.pt"
-        # torch.save(self.model.state_dict(), path + ".pt")
-        # for param in self.model.parameters():
-        #     if param.grad is not None:
-        #         torch.save(param.grad, path + f"_{param.shape}.grad.pt")
-        # torch.save(self.optimizer.state_dict(), path + ".opt.pt")
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
