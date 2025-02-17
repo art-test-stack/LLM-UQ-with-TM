@@ -12,6 +12,7 @@ echo "We are using $SLURM_CPUS_ON_NODE cores per node"
 echo "Total of $SLURM_NTASKS cores"
 module avail Python
 module load Python/3.11.3-GCCcore-12.3.0
-source $ENV_DIR
+source ${ENV_DIR}
+pip install --upgrade pip
 pip install -r requirements.txt
-torchrun --nproc_per_node=${2:-4} main_llm.py
+python main_llm.py
