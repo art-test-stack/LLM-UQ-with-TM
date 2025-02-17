@@ -1,6 +1,9 @@
 models/*
 !models/README.md
 
+dataset/*
+!dataset/README.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

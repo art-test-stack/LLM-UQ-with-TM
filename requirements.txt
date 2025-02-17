@@ -1,0 +1,9 @@
+matplotlib
+numpy
+pandas
+PyTsetlinMachineCUDA
+scikit_learn
+scipy
+tiktoken
+torch
+tqdm

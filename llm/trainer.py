@@ -1,8 +1,9 @@
+from tm_data.preprocessing import InputCSV 
 from llm.model import LLM
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
-
+from typing import Callable
 from tqdm import tqdm
 
 
@@ -36,12 +37,14 @@ class Trainer:
             model: LLM,
             optimizer: optim.Optimizer,
             criterion: nn.Module,
+            csv_object: InputCSV,
             device: torch.device,
             name: str = "model"
         ) -> None:
         self.model = model
         self.optimizer = optimizer
         self.criterion = criterion
+        self.csv_object = csv_object
         self.device = device
         self.model.to(device)
         self.name = name
@@ -62,12 +65,15 @@ class Trainer:
         history = {"train_loss": [], "test_loss": []}
         train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=True)
         val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True, drop_last=True)
+
         early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
 
         with tqdm(range(epochs), unit="epoch", disable=not verbose) as tepoch:
             for epoch in tepoch:
+                self.csv_object.update_hyperparameters(epoch, batch_size)
                 train_loss = self._train_epoch(train_loader)
                 test_loss = self._test_epoch(val_loader)
+                self.csv_object(test_loss)
 
                 history["train_loss"].append(train_loss)
                 history["test_loss"].append(test_loss)
@@ -82,9 +88,7 @@ class Trainer:
 
             tepoch.set_postfix(
                 loss = history["train_loss"][-1],
-                test_loss = history["test_loss"][-1], 
-                # auc = 100. * auc_value,
-                # gmean = 100. * gmean_value,
+                test_loss = history["test_loss"][-1],
             )
         self.save_model()
 
@@ -99,6 +103,7 @@ class Trainer:
             loss.backward()
             self.optimizer.step()
             total_loss += loss.item()
+            self.csv_object.update_model()
             break
         return total_loss / len(train_set)
     

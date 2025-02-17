@@ -1,8 +1,11 @@
 import torch
-from typing import List, Union
+from typing import List, Union, Tuple
 
 
-def get_tensor_stats(tensor: torch.Tensor) -> Union[float, float, float, float, float]:
+def get_tensor_stats(tensor: Union[torch.Tensor, list[torch.Tensor]]) -> Tuple[float, float, float, float, float]:
+    if type(tensor) == list:
+        tensor = torch.Tensor(tensor)
+
     mean = torch.mean(tensor).item()
     median = torch.median(tensor).item()
     std = torch.std(tensor).item()
@@ -16,10 +19,10 @@ def compute_beta_dist_params(mean, std):
     beta_param = (1 - mean) * ((mean * (1 - mean) / variance) - 1)
     return alpha, beta_param
 
-def get_grad_spectrums(grads, spectra):
+def get_grad_spectrums(grads: List[torch.Tensor]) -> List[torch.Tensor]:
     spectrums = []
     for grad in grads:
         if grad.ndim == 2:
             u, s, v = torch.svd(grad)
-            spectra.append(s)
+            spectrums.append(s)
     return spectrums
