@@ -116,8 +116,6 @@ You should have Python (3.10) and pip installed on your machine. If you don't ha
 
 ### Installation
 
-
-<!-- 1. Get a free API Key at [https://example.com](https://example.com) -->
 1. Clone the repo
    ```sh
    git clone git@github.com:art-test-stack/LLM-UQ-with-TM.git
@@ -131,6 +129,23 @@ You should have Python (3.10) and pip installed on your machine. If you don't ha
    ```sh
    python main_llm.py -skip_training
    ```
+
+### To run on HPC with Slurm:
+
+1. Edit the '.env' file to update the variables with the correct paths and settings.
+2. Run the 'run_llm.sh' script to submit the job to the HPC.
+    ```sh
+    sbatch --job-name=$JOB_NAME.$RUN_TYPE \
+    --partition=$PARTITION \
+    --time=$TIMEOUT \
+    --nodes=$NB_NODES \
+    --ntasks-per-node=$NB_TASKS_PER_NODE \
+    --cpus-per-task=$CPUS_PER_TASK \
+    --gres=$GRES \
+    --mem=$MEM \
+    --output=$OUTPUT_DIR/$JOB_NAME.$RUN_TYPE.txt \
+    parallel.slurm 
+    ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
