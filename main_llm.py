@@ -15,21 +15,7 @@ from torch import optim, nn
 
 import argparse
 
-if __name__=="__main__":
-    parser = argparse.ArgumentParser(
-        prog="main.py",
-        description="Train a Tsetlin Machine to evaluate the uncertainty of a LLM",
-        epilog="Enjoy the program! :)",
-    )
-    parser.add_argument(
-        "-st",
-        "--skip_training",
-        help="Skip the training and only evaluate the model",
-        action="store_true",
-    )
-    args = parser.parse_args()
-    skip_training = args.skip_training
-
+def main_train(args):
     device = get_device()
     tokenizer = Tokenizer()
     csv_path = "dataset/uq_features"
@@ -40,10 +26,11 @@ if __name__=="__main__":
     max_content = max(train.max_content, val.max_content)
 
     model = LLM(vocab_size=vocab_size, max_content=max_content)
-    opt = optim.Adam(model.parameters())
-    criterion = nn.CrossEntropyLoss()
+    opt = optim.Adam(model.parameters(), lr=args.lr)
+    criterion = nn.CrossEntropyLoss(reduction="sum")
     print(model)
     csv_object = InputCSV(model, csv_path)
+
     trainer = Trainer(
         model,
         optimizer=opt,
@@ -56,12 +43,52 @@ if __name__=="__main__":
     except:
         print("No model found")
 
-    if not skip_training:
+    if not args.skip_training:
         trainer.fit(
             train, 
             val, 
-            epochs=5
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            patience=args.patience,
+            min_delta=args.min_delta,
         )
+
+if __name__=="__main__":
+    parser = argparse.ArgumentParser(
+        prog="main.py",
+        description="Train a Tsetlin Machine to evaluate the uncertainty of a LLM",
+        epilog="Enjoy the program! :)",
+    )
+    parser.add_argument('--batch-size', type=int, default=32, metavar='N',
+                        help='input batch size for training (default: 32)')
+    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+                        help='input batch size for testing (default: 1000)')
+    parser.add_argument('--epochs', type=int, default=10, metavar='N',
+                        help='number of epochs to train (default: 5)')
+    parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
+                        help='learning rate (default: 1.0)')
+    parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
+                        help='Learning rate step gamma (default: 0.7)')
+    parser.add_argument('--no-cuda', action='store_true', default=False,
+                        help='disables CUDA training')
+    parser.add_argument('--seed', type=int, default=1, metavar='S',
+                        help='random seed (default: 1)')
+    parser.add_argument('--save-model', action='store_true', default=False,
+                        help='For Saving the current Model')
+    parser.add_argument('--patience', type=int, default=5, metavar='P',
+                        help='Early stopping patience (default: 5)')
+    parser.add_argument('--min-delta', type=float, default=0.05, metavar='D',
+                        help='Minimum delta for early stopping (default: 0.05)')
+    parser.add_argument(
+        "-st",
+        "--skip_training",
+        help="Skip the training and only evaluate the model",
+        action="store_true",
+    )
+    args = parser.parse_args()
+
+    main_train(args)
+    
  
     # import torch
     # import matplotlib.pyplot as plt
