@@ -96,6 +96,9 @@ class Trainer:
         self.model.train()
         total_loss = 0
         for src, tgt in train_set:
+            assert not torch.isnan(src).any(), "NaN found in sources!"
+            assert not torch.isnan(tgt).any(), "NaN found in targets!"
+
             src, tgt = src.to(self.device), tgt.to(self.device)
             self.optimizer.zero_grad()
             output = self.model(src, tgt)
@@ -112,6 +115,8 @@ class Trainer:
         total_loss = 0
         with torch.no_grad():
             for src, tgt in val_set:
+                assert not torch.isnan(src).any(), "NaN found in sources!"
+                assert not torch.isnan(tgt).any(), "NaN found in targets!"
                 src, tgt = src.to(self.device), tgt.to(self.device)
                 output = self.model(src, tgt)
                 loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))

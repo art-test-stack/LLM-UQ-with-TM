@@ -33,16 +33,16 @@ if __name__=="__main__":
     device = get_device()
     tokenizer = Tokenizer()
     csv_path = "dataset/uq_features"
-    # dataset = datasets.load_dataset("ibm-research/finqa", "en")
-    # print(type(dataset["train"]["question"]))
+    
     train, test, val = get_data(tokenizer)
 
     vocab_size = tokenizer.get_vocab_size()
+    max_content = max(train.max_content, val.max_content)
 
-    model = LLM(vocab_size=vocab_size)
+    model = LLM(vocab_size=vocab_size, max_content=max_content)
     opt = optim.Adam(model.parameters())
     criterion = nn.CrossEntropyLoss()
-
+    print(model)
     csv_object = InputCSV(model, csv_path)
     trainer = Trainer(
         model,
