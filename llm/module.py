@@ -29,10 +29,22 @@ class Module(nn.Module):
             if p.grad is not None:
                 torch.nan_to_num(p.grad, nan = 0, posinf = 1e5, neginf = -1e5, out = p.grad)
 
+    def memory_storage(self):
+        return sum([p.element_size() * p.nelement() for p in self.parameters()])
+
     def clip_gradient(self, max_norm: float) -> None:
         '''Clip the module gradients'''
         nn.utils.clip_grad_norm_(self.parameters(), max_norm)
     
     def get_grads(self) -> list:
         '''Get the module gradients'''
-        return [p.grad for p in self.parameters() if p.grad is not None]
+        # for p, s in zip(self.parameters(), self.shapes):
+        #     if p.grad is not None:
+        #         print("param", p.cpu().shape)
+        #         print("shape", s)
+        #         p.grad.cpu().view(s)
+        # return [p.grad.cpu().view(s) for p, s in zip(self.parameters(), self.shapes) if p.grad is not None]
+        return [ p.grad for p in self.parameters() if p.grad is not None ]
+    
+    def save_shapes(self) -> None:
+        self.shapes = [ p.shape for p in self.parameters() ]

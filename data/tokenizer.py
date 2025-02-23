@@ -42,7 +42,7 @@ class Tokenizer:
         self.special_tokens = self.model._special_tokens
 
     def get_vocab_size(self) -> int:
-        return self.model.n_vocab
+        return self.model.n_vocab + len(list(self.special_tokens.keys()))
 
     def encode(
             self, 

@@ -22,7 +22,7 @@ from torch.distributed.fsdp.wrap import (
     wrap,
 )
 
-from typing import Callable
+from typing import Callable, Dict
 from tqdm import tqdm
 
 def setup(rank, world_size):
@@ -63,24 +63,26 @@ class ParallelTrainer:
             patience: int = 5,
             min_delta: float = 0.05,
             verbose: bool = True,
-            train_sampler = None,
+            train_kwargs: Dict = {},
+            val_kwargs: Dict = {}
         ) -> None:
 
         history = {"train_loss": [], "test_loss": []}
-        train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, drop_last=True)
-        val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True, drop_last=True)
+        train_loader = DataLoader(train_set, **train_kwargs)
+        val_loader = DataLoader(val_set, **val_kwargs)
 
         early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
 
-        with tqdm(range(epochs), unit="epoch", disable=not verbose) as tepoch:
+        with tqdm(range(epochs), unit="epoch", disable=not verbose and not self.rank==0) as tepoch:
             for epoch in tepoch:
                 self.csv_object.update_hyperparameters(epoch, batch_size)
 
-                if train_sampler:
-                    train_sampler.set_epoch(epoch)
+                if train_kwargs["sampler"]:
+                    train_kwargs["sampler"].set_epoch(epoch)
                 train_loss = self._train_epoch(train_loader)
                 test_loss = self._test_epoch(val_loader)
-                self.csv_object(test_loss)
+                if self.rank == 0:
+                    self.csv_object(test_loss)
 
                 history["train_loss"].append(train_loss)
                 history["test_loss"].append(test_loss)
@@ -91,8 +93,6 @@ class ParallelTrainer:
                 if self.rank == 0 and early_stopping.early_stop:
                     break
 
-                # history["test_loss"].append(test_loss / len(dev_loader.dataset))
-
             tepoch.set_postfix(
                 loss = history["train_loss"][-1],
                 test_loss = history["test_loss"][-1],
@@ -102,17 +102,16 @@ class ParallelTrainer:
 
     def _train_epoch(self, train_set) -> float:
         self.model.train()
-        total_loss = 0
 
         ddp_loss = torch.zeros(2).to(self.rank)
 
         for src, tgt in train_set:
             assert not torch.isnan(src).any(), "NaN found in sources!"
             assert not torch.isnan(tgt).any(), "NaN found in targets!"
-
             src, tgt = src.to(self.rank), tgt.to(self.rank)
             self.optimizer.zero_grad()
             output = self.model(src, tgt)
+            # tgt = nn.functional.one_hot(tgt.view(-1), num_classes=self.model.vocab_size)
             loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
             loss.backward()
             self.optimizer.step()
@@ -120,16 +119,16 @@ class ParallelTrainer:
 
             ddp_loss[0] += loss.item()
             ddp_loss[1] += len(src)
-            self.csv_object.update_model()
-            break
+            
+            if self.rank == 0:
+                self.csv_object.update_model()
+            
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
-        if self.rank == 0:
-            # print('Train Epoch: {} \tLoss: {:.6f}'.format(epoch, ddp_loss[0] / ddp_loss[1]))
-            return ddp_loss[0] / ddp_loss[1]
+        test_loss = ddp_loss[0] / ddp_loss[1]
+        return float(test_loss.cpu().numpy())
     
     def _test_epoch(self, val_set) -> float:
         self.model.eval()
-        total_loss = 0
         ddp_loss = torch.zeros(2).to(self.rank) # can use other dims for other metrics eg. accuracy
 
         with torch.no_grad():
@@ -138,15 +137,16 @@ class ParallelTrainer:
                 assert not torch.isnan(tgt).any(), "NaN found in targets!"
                 src, tgt = src.to(self.rank), tgt.to(self.rank)
                 output = self.model(src, tgt)
+                
+                # tgt = nn.functional.one_hot(tgt.view(-1), num_classes=self.model.vocab_size)
                 loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
-                total_loss += loss.item()
-                ddp_loss[0] += self.criterion(output, tgt).item()
+                
+                ddp_loss[0] += loss.item()
                 ddp_loss[1] += len(src)
-                break
-        
+                
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
-        if self.rank == 0:
-            return ddp_loss[0] / ddp_loss[1]
+        test_loss = ddp_loss[0] / ddp_loss[1]
+        return float(test_loss.cpu().numpy())
     
     def save_model(self):
         path = f"models/{self.name}.pt"

@@ -8,7 +8,8 @@ from llm.parallel_trainer import ParallelTrainer, setup, cleanup
 
 from tm_data.preprocessing import InputCSV
 
-from utils import get_device
+from utils import get_device, get_cuda_allocation
+
 
 import pandas as pd
 import datasets
@@ -36,9 +37,19 @@ import functools
 
 
 def fsdp_main(rank, world_size, args):
+    print("rank", rank)
     setup(rank, world_size)
 
     tokenizer = Tokenizer()
+    # print(tokenizer.decode([0, 1, 200019, 200020]))
+
+    # print(tokenizer.special_tokens)
+    # i = 0
+    # while True:
+    #     print(f"{200019 + i}: {tokenizer.decode([200019 + i])}")
+    #     i += 1
+    #     if i > 100:
+    #         break
     train, test, val = get_data(tokenizer)
     
     sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=True)
@@ -56,8 +67,8 @@ def fsdp_main(rank, world_size, args):
     train_kwargs.update(cuda_kwargs)
     test_kwargs.update(cuda_kwargs)
 
-    train_loader = torch.utils.data.DataLoader(train, **train_kwargs)
-    test_loader = torch.utils.data.DataLoader(val, **test_kwargs)
+    # train_loader = torch.utils.data.DataLoader(train, **train_kwargs)
+    # test_loader = torch.utils.data.DataLoader(val, **test_kwargs)
 
     my_auto_wrap_policy = functools.partial(
         size_based_auto_wrap_policy, min_num_params=100
@@ -67,28 +78,46 @@ def fsdp_main(rank, world_size, args):
     csv_path = "dataset/uq_features"
     
     vocab_size = tokenizer.get_vocab_size()
+    print("vocab_size:", vocab_size)
     max_content = max(train.max_content, val.max_content)
 
-    model = LLM(vocab_size=vocab_size, max_content=max_content).to(rank)
+    model_hyperparams = { 
+        "vocab_size": vocab_size, 
+        "model_size": 16,
+        "max_content": max_content, 
+        "nhead": 1, 
+        "num_encoder_layers": 1, 
+        "num_decoder_layers": 1
+    }
+    model = LLM(**model_hyperparams).to(rank)
     # model = FSDP(model)
+    model.summary()
+
+    print(f"mem storage: {model.memory_storage():,} bytes")
     model = FSDP(model,
         auto_wrap_policy=my_auto_wrap_policy,
-        cpu_offload=CPUOffload(offload_params=True))
-
+        use_orig_params=True
+        # cpu_offload=CPUOffload(offload_params=True)
+    )
+    model.embedding = FSDP(model.embedding, use_orig_params=True) 
     print("FSDP model:", model)
-    opt = optim.Adam(model.parameters(), lr=args.lr)
+    opt = optim.Adam(model.parameters(), lr=args.lr / args.batch_size)
+    
     criterion = nn.CrossEntropyLoss(reduction="sum")
 
     scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
     # init_start_event.record()
     
+    get_cuda_allocation()
+
     csv_object = InputCSV(model, csv_path)
     trainer = ParallelTrainer(
         model,
         optimizer=opt,
         criterion=criterion,
         csv_object=csv_object,
-        rank=rank
+        rank=rank,
+        world_size=world_size
     )
     # Model checkpoint saving, by saving to the rank0 CPU
     # https://pytorch.org/tutorials/intermediate/FSDP_adavnced_tutorial.html#model-checkpoint-saving-by-streaming-to-the-rank0-cpu
@@ -106,7 +135,8 @@ def fsdp_main(rank, world_size, args):
             batch_size=args.batch_size,
             patience=args.patience,
             min_delta=args.min_delta,
-            train_sampler=sampler1
+            train_kwargs=train_kwargs,
+            val_kwargs=test_kwargs
         )
 
     if rank == 0:
@@ -136,7 +166,7 @@ if __name__=="__main__":
                         help='input batch size for training (default: 32)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
+    parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 5)')
     parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
                         help='learning rate (default: 1.0)')
@@ -163,7 +193,7 @@ if __name__=="__main__":
     torch.manual_seed(args.seed)
 
     WORLD_SIZE = torch.cuda.device_count()
-    print("WORLD_SIZE:", WORLD_SIZE)
+    print(f"WORLD_SIZE: {WORLD_SIZE}")
 
     if WORLD_SIZE == 0:
         print("No GPU available")

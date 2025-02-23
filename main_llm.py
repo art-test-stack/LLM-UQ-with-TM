@@ -6,7 +6,7 @@ from llm.trainer import Trainer
 
 from tm_data.preprocessing import InputCSV
 
-from utils import get_device
+from utils import get_device, get_cuda_allocation
 
 import pandas as pd
 import datasets
@@ -16,6 +16,7 @@ from torch import optim, nn
 import argparse
 
 def main_train(args):
+    print("main train function")
     device = get_device()
     tokenizer = Tokenizer()
     csv_path = "dataset/uq_features"
@@ -24,12 +25,23 @@ def main_train(args):
 
     vocab_size = tokenizer.get_vocab_size()
     max_content = max(train.max_content, val.max_content)
-
-    model = LLM(vocab_size=vocab_size, max_content=max_content)
+    model_hyperparams = { 
+        "vocab_size": vocab_size, 
+        "model_size": 32,
+        "max_content": max_content, 
+        "nhead": 1, 
+        "num_encoder_layers": 1, 
+        "num_decoder_layers": 1
+    }
+    model = LLM(**model_hyperparams)
     opt = optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.CrossEntropyLoss(reduction="sum")
-    print(model)
+    model.summary()
+    # import sys
+    # print("model size:", print(sys.getsizeof(train)))
+    print(f"mem storage: {model.memory_storage():,} bytes")
     csv_object = InputCSV(model, csv_path)
+    get_cuda_allocation()
 
     trainer = Trainer(
         model,

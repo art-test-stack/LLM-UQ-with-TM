@@ -16,29 +16,34 @@ class GradStats:
     grad_std: float | None = None
     grad_max: float | None = None
     grad_min: float | None = None
+
     # grad_alpha: float | None = None
     # grad_beta: float | None = None
-    spectrum_mean: float | None = None
-    spectrum_median: float | None = None
-    spectrum_std: float | None = None
-    spectrum_max: float | None = None
-    spectrum_min: float | None = None
-    spectrum_alpha: float | None = None
-    spectrum_beta: float | None = None
+
+    # spectrum_mean: float | None = None
+    # spectrum_median: float | None = None
+    # spectrum_std: float | None = None
+    # spectrum_max: float | None = None
+    # spectrum_min: float | None = None
+    # spectrum_alpha: float | None = None
+    # spectrum_beta: float | None = None
     grad_ll_mean: float | None = None
     grad_ll_median: float | None = None
     grad_ll_std: float | None = None
     grad_ll_max: float | None = None
     grad_ll_min: float | None = None
+
     # grad_ll_alpha: float | None = None
     # grad_ll_beta: float | None = None
-    spectrum_ll_mean: float | None = None
-    spectrum_ll_median: float | None = None
-    spectrum_ll_std: float | None = None
-    spectrum_ll_max: float | None = None
-    spectrum_ll_min: float | None = None
-    spectrum_ll_alpha: float | None = None
-    spectrum_ll_beta: float | None = None
+
+    # spectrum_ll_mean: float | None = None
+    # spectrum_ll_median: float | None = None
+    # spectrum_ll_std: float | None = None
+    # spectrum_ll_max: float | None = None
+    # spectrum_ll_min: float | None = None
+    # spectrum_ll_alpha: float | None = None
+    # spectrum_ll_beta: float | None = None
+
 
 @dataclass
 class InputData(GradStats):
@@ -47,8 +52,9 @@ class InputData(GradStats):
     epoch: int | None = None
     batch_size: int | None = None
 
+
 class InputCSV:
-    def __init__(self, model: nn.Module, path: Union[Path, str]):
+    def __init__(self, model: nn.Module, path: Union[Path, str], world_size: int = 0):
         if type(path) == str:
             self.path = Path(path)
         if not self.path.suffix == '.csv':
@@ -57,6 +63,7 @@ class InputCSV:
             create_csv(self.path)
         self.model = model
         self.init_data()
+        self.world_size = world_size
 
     def init_data(self, last_test_loss: Union[float, None] = None) -> None:
         self.current = InputData()
@@ -68,7 +75,7 @@ class InputCSV:
         assert self.current.epoch or self.current.epoch == 0, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
 
         self.current.test_loss = test_loss
-        self.current.var_test_loss = self.last_test_loss - test_loss if self.last_test_loss else - test_loss
+        self.current.var_test_loss = test_loss - self.last_test_loss if self.last_test_loss else test_loss
         # add a way to store loss variations
         self.compute_model_stats()
         self.update_csv()
@@ -82,14 +89,16 @@ class InputCSV:
         # PB 1: can't do torch(grads) or np.array(grads) because of the different shapes for each layer
         # PB 2: store grads of all epochs maybe very heavy computationally
         # Temporary solution: take the stats at each batch iteration at store the mean of each stats at the end of the epoch
-        try: 
-            grads = self.model.get_grads()
-        except:
-            if None in grads:
-                return
-            else:
-                grads = [p.grad for p in self.model.parameters()]
-
+        self.model.clean_nan()
+        grads = self.model.get_grads()
+        # try: 
+        #     grads = self.model.get_grads()
+        # except:
+        #     if None in grads:
+        #         return
+        #     else:
+        #         grads = [p.grad for p in self.model.parameters()]
+        # assert not torch.isnan(grads).any(), "Nan value in grads"
         self.compute_grad_stats(grads)
 
     def compute_grad_stats(self, grads) -> None:
@@ -97,24 +106,24 @@ class InputCSV:
         last_layers_grads = get_last_layers_grads(grads)
         all_ll_grads = get_concat_tensor(last_layers_grads)
 
-        spectrums = get_grad_spectrums(grads)
-        all_spectras = get_concat_tensor(spectrums)
-        last_layers_spectrums = get_last_layers_spectrums(spectrums)
-        all_ll_spectrums = get_concat_tensor(last_layers_spectrums)
+        # spectrums = get_grad_spectrums(grads)
+        # all_spectras = get_concat_tensor(spectrums)
+        # last_layers_spectrums = get_last_layers_spectrums(spectrums)
+        # all_ll_spectrums = get_concat_tensor(last_layers_spectrums)
 
         grad_mean, grad_median, grad_std, grad_max, grad_min = get_tensor_stats(all_grads)
         grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min = get_tensor_stats(all_ll_grads)
-        spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min = get_tensor_stats(all_spectras)
-        spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min = get_tensor_stats(all_ll_spectrums)
+        # spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min = get_tensor_stats(all_spectras)
+        # spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min = get_tensor_stats(all_ll_spectrums)
 
-        spectrum_alpha, spectrum_beta = compute_beta_dist_params(spectrum_mean, spectrum_std)
-        spectrum_ll_alpha, spectrum_ll_beta = compute_beta_dist_params(spectrum_ll_mean, spectrum_ll_std)
+        # spectrum_alpha, spectrum_beta = compute_beta_dist_params(spectrum_mean, spectrum_std)
+        # spectrum_ll_alpha, spectrum_ll_beta = compute_beta_dist_params(spectrum_ll_mean, spectrum_ll_std)
 
         current_grad = GradStats(
             grad_mean, grad_median, grad_std, grad_max, grad_min,
-            spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min, spectrum_alpha, spectrum_beta,
+            # spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min, spectrum_alpha, spectrum_beta,
             grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min,
-            spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min, spectrum_ll_alpha, spectrum_ll_beta
+            # spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min, spectrum_ll_alpha, spectrum_ll_beta
         )
         self.current_grads.append(current_grad)
 
@@ -126,7 +135,8 @@ class InputCSV:
             grad_stats.__setattr__(fn, fn_mean)
         self.current = InputData(
             **{fn: getattr(grad_stats, fn) for fn in grad_stats.__dataclass_fields__.keys()},
-            test_loss=self.current.test_loss, epoch=self.current.epoch, batch_size=self.current.batch_size
+            test_loss=self.current.test_loss, var_test_loss=self.current.var_test_loss, 
+            epoch=self.current.epoch, batch_size=self.current.batch_size
         )
 
     def update_csv(self) -> None:

@@ -139,6 +139,7 @@ You should have Python (3.10) and pip installed on your machine. If you don't ha
 2. Run the 'run_llm.sh' script to submit the job to the HPC.
     ```sh
     sbatch --job-name=$JOB_NAME.$RUN_TYPE \
+    --account=$ACCOUNT \
     --partition=$PARTITION \
     --time=$TIMEOUT \
     --nodes=$NB_NODES \

@@ -21,7 +21,7 @@ class FinQADataset(Dataset):
         return len(self.questions)
 
     def __getitem__(self, idx: int):
-        return self.questions[idx].long(), self.answers[idx].long()
+        return self.questions[idx].long(), self.answers[idx].long() #.float()
     
 def get_data(tokenizer: Tokenizer) -> Tuple[FinQADataset, FinQADataset, FinQADataset]:
     dataset = datasets.load_dataset("ibm-research/finqa", "en")

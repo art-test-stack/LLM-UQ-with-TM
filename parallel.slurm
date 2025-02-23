@@ -13,8 +13,8 @@ echo "Total of $SLURM_NTASKS cores"
 module avail Python
 module load Python/3.11.3-GCCcore-12.3.0
 source ${ENV_DIR}
-# pip install --upgrade pip
+# Uncomment the following lines to install requirements
+# pip install --upgrade pip 
 # pip install -r requirements.txt
-export CUDA_LAUNCH_BLOCKING = 1
-export TORCH_USE_CUDA_DSA = 1
-python main_llm.py
+python -c "import torch; print(torch.__version__, torch.version.cuda)"
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python test_fsdp.py
