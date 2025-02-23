@@ -115,7 +115,6 @@ class ParallelTrainer:
             loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
             loss.backward()
             self.optimizer.step()
-            total_loss += loss.item()
 
             ddp_loss[0] += loss.item()
             ddp_loss[1] += len(src)
