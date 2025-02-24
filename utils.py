@@ -19,9 +19,9 @@ def get_cuda_allocation():
         r = torch.cuda.memory_reserved(0)
         a = torch.cuda.memory_allocated(0)
         f = r-a 
-        print("Total memory", t)
-        print("Reserved memory", r)
-        print("Allocated memory", a)
-        print("Free memory")
+        print(f"Total memory {t:,}")
+        print(f"Reserved memory {r:,}")
+        print(f"Allocated memory {a:,}")
+        print(f"Free memory {r-a:,}")
     else:
         print("No cuda device")

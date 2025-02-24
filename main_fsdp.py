@@ -83,17 +83,17 @@ def fsdp_main(rank, world_size, args):
 
     model_hyperparams = { 
         "vocab_size": vocab_size, 
-        "model_size": 16,
+        "model_size": 512,
         "max_content": max_content, 
-        "nhead": 1, 
-        "num_encoder_layers": 1, 
-        "num_decoder_layers": 1
+        "nhead": 8, 
+        "num_encoder_layers": 4, 
+        "num_decoder_layers": 4
     }
     model = LLM(**model_hyperparams).to(rank)
     # model = FSDP(model)
     model.summary()
 
-    print(f"mem storage: {model.memory_storage():,} bytes")
+    print(f"Model memory size: {model.memory_storage():,} bytes")
     model = FSDP(model,
         auto_wrap_policy=my_auto_wrap_policy,
         use_orig_params=True
@@ -105,7 +105,7 @@ def fsdp_main(rank, world_size, args):
     
     criterion = nn.CrossEntropyLoss(reduction="sum")
 
-    scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
+    # scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
     # init_start_event.record()
     
     get_cuda_allocation()
@@ -162,14 +162,14 @@ if __name__=="__main__":
         description="Train a Tsetlin Machine to evaluate the uncertainty of a LLM",
         epilog="Enjoy the program! :)",
     )
-    parser.add_argument('--batch-size', type=int, default=32, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=16, metavar='N',
                         help='input batch size for training (default: 32)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 5)')
-    parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
-                        help='learning rate (default: 1.0)')
+    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
+                        help='learning rate (default: 0.001)')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
                         help='Learning rate step gamma (default: 0.7)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
@@ -178,8 +178,8 @@ if __name__=="__main__":
                         help='random seed (default: 1)')
     parser.add_argument('--save-model', action='store_true', default=False,
                         help='For Saving the current Model')
-    parser.add_argument('--patience', type=int, default=5, metavar='P',
-                        help='Early stopping patience (default: 5)')
+    parser.add_argument('--patience', type=int, default=25, metavar='P',
+                        help='Early stopping patience (default: 25)')
     parser.add_argument('--min-delta', type=float, default=0.05, metavar='D',
                         help='Minimum delta for early stopping (default: 0.05)')
     parser.add_argument(

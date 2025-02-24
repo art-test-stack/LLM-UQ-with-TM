@@ -12,6 +12,7 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp import FullStateDictConfig, StateDictType
 from torch.distributed.fsdp.fully_sharded_data_parallel import (
     CPUOffload,
     BackwardPrefetch,
@@ -22,7 +23,7 @@ from torch.distributed.fsdp.wrap import (
     wrap,
 )
 
-from typing import Callable, Dict
+from typing import Callable, Dict, Union
 from tqdm import tqdm
 
 def setup(rank, world_size):
@@ -38,7 +39,7 @@ def cleanup():
 class ParallelTrainer:
     def __init__(
             self,
-            model: FSDP,
+            model: Union[Callable,FSDP,nn.Module],
             optimizer: optim.Optimizer,
             criterion: nn.Module,
             csv_object: InputCSV,
@@ -53,6 +54,7 @@ class ParallelTrainer:
         self.rank = rank
         self.world_size = world_size
         self.name = name
+        self.path = f"models/{self.name}.pt"
 
     def fit(
             self, 
@@ -91,8 +93,13 @@ class ParallelTrainer:
 
                 early_stopping(test_loss)
                 if self.rank == 0 and early_stopping.early_stop:
+                    if self.world_size > 1:
+                        self.save_modelcheckpoint()
+                    else:
+                        self.save_model()
+                if early_stopping.early_stop:
+                    print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}")
                     break
-
             tepoch.set_postfix(
                 loss = history["train_loss"][-1],
                 test_loss = history["test_loss"][-1],
@@ -148,23 +155,30 @@ class ParallelTrainer:
         return float(test_loss.cpu().numpy())
     
     def save_model(self):
-        path = f"models/{self.name}.pt"
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'loss': self.criterion
-        }, path)
+        }, self.path)
         # self.save_grads()
     
     def load_model(self):
-        path = f"models/{self.name}.pt"
-        checkpoint = torch.load(path, weights_only=False)
+        checkpoint = torch.load(self.path, weights_only=False)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.criterion = checkpoint['loss']
         self.load_grads()
         return self.model
     
+    def save_modelcheckpoint(self):
+        save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+        with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, save_policy):
+            cpu_state = self.model.state_dict()
+
+        if self.rank == 0:
+        # save_name = file_save_name + "-" + time_of_run + "-" + currEpoch
+            torch.save(cpu_state, self.path)
+
     # def save_grads(self):
     #     path = f"models/{self.name}.pt"
     #     for id, param in enumerate(self.model.parameters()):

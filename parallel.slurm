@@ -17,4 +17,6 @@ source ${ENV_DIR}
 # pip install --upgrade pip 
 # pip install -r requirements.txt
 python -c "import torch; print(torch.__version__, torch.version.cuda)"
-PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python test_fsdp.py
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    python main_fsdp.py --batch-size $BATCH_SIZE --epochs $EPOCHS --lr $LEARNING_RATE \
+        --gamma $GAMMA --seed $SEED --save_model --patience $PATIENCE --min-delta $MIN_DELTA

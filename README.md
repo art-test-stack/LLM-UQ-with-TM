@@ -200,7 +200,7 @@ Don't forget to give the project a star! Thanks again!
 ### Top contributors:
 
 <!-- <a href="https://github.com/art-test-stack/LLM-UQ-with-TM/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=othneildrew/Best-README-Template" alt="contrib.rocks image" />
+  <img src="https://contrib.rocks/image?repo=https://github.com/art-test-stack/LLM-UQ-with-TM" alt="contrib.rocks image" />
 </a>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p> -->
@@ -247,15 +247,15 @@ Project Link: [https://github.com/your_username/repo_name](https://github.com/yo
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/othneildrew/Best-README-Template.svg?style=for-the-badge
+[contributors-shield]: https://img.shields.io/github/contributors/art-test-stack/LLM-UQ-with-TM.svg?style=for-the-badge
 [contributors-url]: https://github.com/art-test-stack/LLM-UQ-with-TM/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/othneildrew/Best-README-Template.svg?style=for-the-badge
+[forks-shield]: https://img.shields.io/github/forks/art-test-stack/LLM-UQ-with-TM.svg?style=for-the-badge
 [forks-url]: https://github.com/art-test-stack/LLM-UQ-with-TM/network/members
-[stars-shield]: https://img.shields.io/github/stars/othneildrew/Best-README-Template.svg?style=for-the-badge
+[stars-shield]: https://img.shields.io/github/stars/art-test-stack/LLM-UQ-with-TM.svg?style=for-the-badge
 [stars-url]: https://github.com/art-test-stack/LLM-UQ-with-TM/stargazers
-[issues-shield]: https://img.shields.io/github/issues/othneildrew/Best-README-Template.svg?style=for-the-badge
+[issues-shield]: https://img.shields.io/github/issues/art-test-stack/LLM-UQ-with-TM.svg?style=for-the-badge
 [issues-url]: https://github.com/art-test-stack/LLM-UQ-with-TM/issues
-[license-shield]: https://img.shields.io/github/license/othneildrew/Best-README-Template.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/art-test-stack/LLM-UQ-with-TM.svg?style=for-the-badge
 [license-url]: https://github.com/art-test-stack/LLM-UQ-with-TM/blob/master/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/othneildrew

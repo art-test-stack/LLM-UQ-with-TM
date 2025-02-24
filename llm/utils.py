@@ -1,6 +1,6 @@
 
 class EarlyStopping:
-    def __init__(self, patience=5, min_delta=0.05):
+    def __init__(self, patience=20, min_delta=0.05):
         self.patience = patience
         self.min_delta = min_delta
         self.counter = 0
