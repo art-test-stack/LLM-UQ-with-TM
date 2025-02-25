@@ -10,7 +10,7 @@ class FinQADataset(Dataset):
     def __init__(self, data: Any, tokenizer: Tokenizer):
         questions = [ tokenizer.encode(question) for question in data["question"]]
         answers = [ tokenizer.encode(answer) for answer in data["answer"]]
-        
+
         max_len = max([len(q) for q in questions] + [len(a) for a in answers])
         
         self.questions = torch.Tensor([ q + [tokenizer.special_tokens[CONTROL_TOKENS.padding]] * (max_len - len(q)) for q in questions ])
@@ -21,7 +21,7 @@ class FinQADataset(Dataset):
         return len(self.questions)
 
     def __getitem__(self, idx: int):
-        return self.questions[idx].long(), self.answers[idx].long() #.float()
+        return self.questions[idx].long(), self.answers[idx].long()
     
 def get_data(tokenizer: Tokenizer) -> Tuple[FinQADataset, FinQADataset, FinQADataset]:
     dataset = datasets.load_dataset("ibm-research/finqa", "en")

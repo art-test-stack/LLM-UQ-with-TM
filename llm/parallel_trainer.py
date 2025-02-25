@@ -75,7 +75,7 @@ class ParallelTrainer:
 
         early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
 
-        with tqdm(range(epochs), unit="epoch", disable=not verbose and not self.rank==0) as tepoch:
+        with tqdm(range(epochs), unit="epoch", disable=not verbose or not self.rank==0) as tepoch:
             for epoch in tepoch:
                 self.csv_object.update_hyperparameters(epoch, batch_size)
 
@@ -98,7 +98,7 @@ class ParallelTrainer:
                     else:
                         self.save_model()
                 if early_stopping.early_stop:
-                    print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}")
+                    print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}") if self.rank == 0 else None
                     break
             tepoch.set_postfix(
                 loss = history["train_loss"][-1],
