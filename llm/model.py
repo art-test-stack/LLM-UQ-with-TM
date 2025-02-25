@@ -143,18 +143,17 @@ class LLM(Module):
             if p.dim() > 1:
                 nn.init.normal_(p, mean=0.0, std=0.02)
             
-    def forward(self, src, tgt):
+    def forward(self, src, tgt, mask=None):
         assert tgt.min() >= 0, "Embedding input contains negative indices!"
         assert tgt.max() < self.embedding.num_embeddings, f"Embedding input exceeds dictionary size! Found size: {tgt.max()} which is >= {self.embedding.num_embeddings} instead of strictly lower"
 
-        tgt = self.embedding(tgt)
         src = self.embedding(src)
+        tgt = self.embedding(tgt)
 
+        src = self.pos_enc(src)
         tgt = self.pos_enc(tgt)
-        
-        src = self.pos_enc(src) # .table[:src.size(1)]
 
-        out = self.main(src, tgt)
+        out = self.main(src, tgt, tgt_mask=mask) if mask else self.main(src, tgt)
         out = self.fc(out)
         out = self.softmax(out)
         return out
