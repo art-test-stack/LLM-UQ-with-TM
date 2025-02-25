@@ -65,11 +65,11 @@ class FinQADataset(Dataset):
 
         input_ids = q_enc.squeeze(0)
 
-        attention_mask = causal_mask(len(a_enc)) + padding_mask(a_enc, self.pad_token_id)
+        # attention_mask = causal_mask(len(a_enc)) # + padding_mask(a_enc, self.pad_token_id)
         labels = a_enc.squeeze(0) 
         # labels[labels == self.tokenizer.pad_token_id] = -100  
 
-        return input_ids, labels, attention_mask
+        return input_ids, labels # , attention_mask
 
 
 def causal_mask(seq_len):

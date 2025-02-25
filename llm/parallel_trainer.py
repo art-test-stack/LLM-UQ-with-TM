@@ -1,3 +1,4 @@
+from data.tokenizer import CONTROL_TOKENS
 from tm_data.preprocessing import InputCSV
 from llm.utils import EarlyStopping
 from llm.model import LLM
@@ -26,15 +27,6 @@ from torch.distributed.fsdp.wrap import (
 from typing import Callable, Dict, Union
 from tqdm import tqdm
 
-def setup(rank, world_size):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
-
-    # initialize the process group
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
-
-def cleanup():
-    dist.destroy_process_group()
 
 class ParallelTrainer:
     def __init__(
@@ -45,7 +37,9 @@ class ParallelTrainer:
             csv_object: InputCSV,
             rank: torch.device,
             world_size: int,
-            name: str = "model"
+            name: str = "model",
+            soa_token_id: int = 0,
+            eoa_token_id: int = 0
         ) -> None:
         self.model = model
         self.optimizer = optimizer
@@ -55,6 +49,9 @@ class ParallelTrainer:
         self.world_size = world_size
         self.name = name
         self.path = f"models/{self.name}.pt"
+        assert not soa_token_id == eoa_token_id, "Start of answer and end of answer tokens should be different"
+        self.soa_token_id = soa_token_id
+        self.eoa_token_id = eoa_token_id
 
     def fit(
             self, 
@@ -97,6 +94,7 @@ class ParallelTrainer:
                         self.save_modelcheckpoint()
                     else:
                         self.save_model()
+                torch.cuda.empty_cache()
                 if early_stopping.early_stop:
                     print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}") if self.rank == 0 else None
                     break
@@ -128,6 +126,7 @@ class ParallelTrainer:
             
             if self.rank == 0:
                 self.csv_object.update_model()
+            break
             
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         test_loss = ddp_loss[0] / ddp_loss[1]
@@ -142,13 +141,12 @@ class ParallelTrainer:
                 assert not torch.isnan(src).any(), "NaN found in sources!"
                 assert not torch.isnan(tgt).any(), "NaN found in targets!"
                 src, tgt = src.to(self.rank), tgt.to(self.rank)
-                output = self.model(src, tgt)
-                
-                # tgt = nn.functional.one_hot(tgt.view(-1), num_classes=self.model.vocab_size)
+                output = self.infer(src, testing=True)
                 loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
                 
                 ddp_loss[0] += loss.item()
                 ddp_loss[1] += len(src)
+                break
                 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         test_loss = ddp_loss[0] / ddp_loss[1]
@@ -179,18 +177,37 @@ class ParallelTrainer:
         # save_name = file_save_name + "-" + time_of_run + "-" + currEpoch
             torch.save(cpu_state, self.path)
 
-    # def save_grads(self):
-    #     path = f"models/{self.name}.pt"
-    #     for id, param in enumerate(self.model.parameters()):
-    #         if param.grad is not None:
-    #             # print(param.grad.shape)
-    #             torch.save(param.grad, path + f"_{id}_{param.shape}.grad.pt")
-    
-    # def load_grads(self):
-    #     path = f"models/{self.name}.pt"
-    #     for id, param in enumerate(self.model.parameters()):
-    #         grad = torch.load(path + f"_{id}_{param.shape}.grad.pt")
-    #         param.grad = grad
-    #     return self.model
+
+    def infer(self, src, tokenizer=None, testing=False):
+        self.model.eval() 
+        device = src.device 
+        # device = next(self.model.parameters()).device 
+
+        if tokenizer:
+            assert type(src) == str or type(src) == list, "If Tokenizer given for inference, src type should be str or list of str"
+            encodings = tokenizer(src, return_tensors=True, padding=True, truncation=True)
+            src = encodings.to(device)
+
+        batch_size = src.shape[0]
+
+        generated_tokens = torch.full((batch_size, 1), self.soa_token_id, device=device, dtype=torch.long)
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+
+        for _ in range(self.model.max_content):
+            with torch.no_grad():
+                output = self.model(src, generated_tokens, has_mask=True) 
+
+            next_tokens = torch.argmax(output[:, -1, :], dim=-1, keepdim=True)
+            generated_tokens = torch.cat([generated_tokens, next_tokens], dim=1)
+
+            if testing:
+                finished |= (next_tokens.squeeze(1) == self.eoa_token_id)
+                if finished.all():
+                    break
+        
+        if tokenizer:
+            answers = [tokenizer.decode(seq.tolist()) for seq in generated_tokens]
+
+        return answers
 
 

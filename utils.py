@@ -13,15 +13,17 @@ def get_device() -> torch.device:
     '''Get the device'''
     return DEVICE
 
-def get_cuda_allocation():
+def get_cuda_allocation(verbose=False):
     if DEVICE == torch.device("cuda"):
         t = torch.cuda.get_device_properties(0).total_memory
         r = torch.cuda.memory_reserved(0)
         a = torch.cuda.memory_allocated(0)
         f = r-a 
-        print(f"Total memory {t:,}")
-        print(f"Reserved memory {r:,}")
-        print(f"Allocated memory {a:,}")
-        print(f"Free memory {r-a:,}")
+        if verbose:
+            print(f"Total memory {t:,}")
+            print(f"Reserved memory {r:,}")
+            print(f"Allocated memory {a:,}")
+            print(f"Free memory {r-a:,}")
+        return r-a
     else:
         print("No cuda device")

@@ -2,7 +2,7 @@ from data.dataset import get_data
 from data.tokenizer import Tokenizer
 
 from llm.model import LLM
-from llm.trainer import Trainer
+from archives.trainer import Trainer
 
 from tm_data.preprocessing import InputCSV
 

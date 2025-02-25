@@ -1,16 +1,16 @@
-from main_llm import main_train
+from archives.main_llm import main_train
 
 from data.dataset import get_data
 from data.tokenizer import Tokenizer, CONTROL_TOKENS
 
 from llm.model import LLM
-from llm.parallel_trainer import ParallelTrainer, setup, cleanup
+from llm.parallel_trainer import ParallelTrainer
 
 from tm_data.preprocessing import InputCSV
 
 from utils import get_device, get_cuda_allocation
 
-
+import os
 import pandas as pd
 import datasets
 
@@ -32,24 +32,34 @@ from torch.distributed.fsdp.wrap import (
 )
 
 import argparse
-
 import functools
 
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
+    
+    torch.cuda.empty_cache()
+
+def cleanup():
+    dist.destroy_process_group()
+
+def print_fsdp_wrapping(module, prefix=""):
+    for name, child in module.named_children():
+        full_name = f"{prefix}.{name}" if prefix else name
+        if isinstance(child, FSDP):
+            print(f"{full_name} is wrapped with FSDP")
+        else:
+            print(f"{full_name} is not wrapped with FSDP")
+        print_fsdp_wrapping(child, full_name)
 
 def fsdp_main(rank, world_size, args):
     print("rank", rank)
     setup(rank, world_size)
-
     tokenizer = Tokenizer()
-    # print(tokenizer.decode([0, 1, 200019, 200020]))
 
-    # print(tokenizer.special_tokens)
-    # i = 0
-    # while True:
-    #     print(f"{200019 + i}: {tokenizer.decode([200019 + i])}")
-    #     i += 1
-    #     if i > 100:
-    #         break
     train, test, val = get_data(tokenizer)
     
     sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=True)
@@ -61,25 +71,23 @@ def fsdp_main(rank, world_size, args):
     cuda_kwargs = {
         'num_workers': 2,
         'pin_memory': True,
-        'shuffle': False
+        # 'shuffle': True
     }
     
     train_kwargs.update(cuda_kwargs)
     test_kwargs.update(cuda_kwargs)
 
-    # train_loader = torch.utils.data.DataLoader(train, **train_kwargs)
-    # test_loader = torch.utils.data.DataLoader(val, **test_kwargs)
 
     my_auto_wrap_policy = functools.partial(
         size_based_auto_wrap_policy, min_num_params=100
     )
-    torch.cuda.set_device(rank)
+    # torch.cuda.set_device(rank)
 
     csv_path = "dataset/uq_features"
     
     vocab_size = tokenizer.get_vocab_size()
     print("vocab_size:", vocab_size)
-    max_content = max(train.max_content, val.max_content)
+    max_content = max(train.max_q_len, val.max_a_len)
 
     model_hyperparams = { 
         "vocab_size": vocab_size, 
@@ -90,25 +98,34 @@ def fsdp_main(rank, world_size, args):
         "num_decoder_layers": 4
     }
     model = LLM(**model_hyperparams).to(rank)
-    # model = FSDP(model)
-    model.summary()
+    if args.verbose:
+        model.summary()
 
-    print(f"Model memory size: {model.memory_storage():,} bytes")
+    model_mem_required = model.memory_storage()
     model = FSDP(model,
-        auto_wrap_policy=my_auto_wrap_policy,
-        use_orig_params=True
+        # auto_wrap_policy=my_auto_wrap_policy,
+        use_orig_params=True,
         # cpu_offload=CPUOffload(offload_params=True)
     )
-    model.embedding = FSDP(model.embedding, use_orig_params=True) 
-    print("FSDP model:", model)
+    # model.embedding = FSDP(model.embedding, use_orig_params=True) 
+
+    if args.verbose:
+        print_fsdp_wrapping(model)
+        print(f"Model memory size: {model_mem_required:,} bytes")
+        print("FSDP model:", model)
     
     opt = optim.Adam(model.parameters(), lr=args.lr / args.batch_size)
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.special_tokens[CONTROL_TOKENS.padding],reduction="sum")
     # scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
     # init_start_event.record()
     
-    get_cuda_allocation()
+    free_memory = get_cuda_allocation(verbose=args.verbose)
 
+    if args.verbose:
+        assert free_memory >= model_mem_required, f"""MEMORY ERROR: Free memory space is to small to store the model on cuda. Try to allocate more memory. 
+            Current rank: {rank}.
+            Free memory: {free_memory:,} bytes.
+            Memory required for the model: {model_mem_required:,} bytes"""
     csv_object = InputCSV(model, csv_path)
     trainer = ParallelTrainer(
         model,
@@ -116,7 +133,9 @@ def fsdp_main(rank, world_size, args):
         criterion=criterion,
         csv_object=csv_object,
         rank=rank,
-        world_size=world_size
+        world_size=world_size,
+        soa_token_id=tokenizer.special_tokens[CONTROL_TOKENS.start_of_answer],
+        eoa_token_id=tokenizer.special_tokens[CONTROL_TOKENS.end_of_answer],
     )
     # Model checkpoint saving, by saving to the rank0 CPU
     # https://pytorch.org/tutorials/intermediate/FSDP_adavnced_tutorial.html#model-checkpoint-saving-by-streaming-to-the-rank0-cpu
@@ -177,6 +196,8 @@ if __name__=="__main__":
                         help='random seed (default: 1)')
     parser.add_argument('--save-model', action='store_true', default=False,
                         help='For Saving the current Model')
+    parser.add_argument('--verbose', action='store_true', default=False,
+                        help='For Showing some more information')
     parser.add_argument('--patience', type=int, default=25, metavar='P',
                         help='Early stopping patience (default: 25)')
     parser.add_argument('--min-delta', type=float, default=0.05, metavar='D',
@@ -190,7 +211,6 @@ if __name__=="__main__":
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
-
     WORLD_SIZE = torch.cuda.device_count()
     print(f"WORLD_SIZE: {WORLD_SIZE}")
 

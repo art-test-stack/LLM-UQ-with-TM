@@ -130,9 +130,10 @@ class LLM(Module):
             model_size, 
             nhead=nhead, 
             num_encoder_layers=num_encoder_layers, 
-            num_decoder_layers=num_decoder_layers
+            num_decoder_layers=num_decoder_layers,
+            batch_first=True
         )
-
+        self.max_content = max_content
         self.fc = nn.Linear(model_size, vocab_size)
         self.softmax = nn.Softmax(dim=-1)
         self.init_weights()
@@ -143,17 +144,23 @@ class LLM(Module):
             if p.dim() > 1:
                 nn.init.normal_(p, mean=0.0, std=0.02)
             
-    def forward(self, src, tgt, mask=None):
+    def forward(self, src, tgt, has_mask=True):
         assert tgt.min() >= 0, "Embedding input contains negative indices!"
         assert tgt.max() < self.embedding.num_embeddings, f"Embedding input exceeds dictionary size! Found size: {tgt.max()} which is >= {self.embedding.num_embeddings} instead of strictly lower"
-
+        
         src = self.embedding(src)
         tgt = self.embedding(tgt)
 
         src = self.pos_enc(src)
         tgt = self.pos_enc(tgt)
 
-        out = self.main(src, tgt, tgt_mask=mask) if mask else self.main(src, tgt)
+        mask = None
+        if has_mask:
+            device = src.device
+            seq_len = tgt.shape[1]
+            mask = torch.tril(torch.ones((seq_len, seq_len), device=device)).bool()
+            
+        out = self.main(src, tgt, tgt_mask=mask)
         out = self.fc(out)
-        out = self.softmax(out)
+        # out = self.softmax(out)
         return out

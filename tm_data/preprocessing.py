@@ -89,7 +89,7 @@ class InputCSV:
         # PB 1: can't do torch(grads) or np.array(grads) because of the different shapes for each layer
         # PB 2: store grads of all epochs maybe very heavy computationally
         # Temporary solution: take the stats at each batch iteration at store the mean of each stats at the end of the epoch
-        self.model.clean_nan()
+        # self.model.clean_nan()
         grads = self.model.get_grads()
         # try: 
         #     grads = self.model.get_grads()
