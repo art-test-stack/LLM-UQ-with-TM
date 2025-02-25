@@ -7,3 +7,5 @@ scipy
 tiktoken
 torch
 tqdm
+llama-stack
+pytorch-lightning

@@ -1,7 +1,7 @@
 from main_llm import main_train
 
 from data.dataset import get_data
-from data.tokenizer import Tokenizer
+from data.tokenizer import Tokenizer, CONTROL_TOKENS
 
 from llm.model import LLM
 from llm.parallel_trainer import ParallelTrainer, setup, cleanup
@@ -101,10 +101,9 @@ def fsdp_main(rank, world_size, args):
     )
     model.embedding = FSDP(model.embedding, use_orig_params=True) 
     print("FSDP model:", model)
-    opt = optim.Adam(model.parameters(), lr=args.lr / args.batch_size)
     
-    criterion = nn.CrossEntropyLoss(reduction="sum")
-
+    opt = optim.Adam(model.parameters(), lr=args.lr / args.batch_size)
+    criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.special_tokens[CONTROL_TOKENS.padding],reduction="sum")
     # scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
     # init_start_event.record()
     

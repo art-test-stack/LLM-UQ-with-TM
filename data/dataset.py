@@ -13,6 +13,8 @@ class FinQADataset(Dataset):
 
         max_len = max([len(q) for q in questions] + [len(a) for a in answers])
         
+        # TODO: USE torch.nn.utils.rnn.pad_sequence instead
+        # https://pytorch.org/docs/stable/generated/torch.nn.utils.rnn.pad_sequence.html
         self.questions = torch.Tensor([ q + [tokenizer.special_tokens[CONTROL_TOKENS.padding]] * (max_len - len(q)) for q in questions ])
         self.answers = torch.Tensor([ a + [tokenizer.special_tokens[CONTROL_TOKENS.padding]] * (max_len - len(a)) for a in answers ])
         self.max_content = max_len

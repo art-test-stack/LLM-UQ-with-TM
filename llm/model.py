@@ -43,6 +43,31 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:,:x.size(1), :].to(x.device)
         return x
     
+class TransformerBase(Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def forward(self, src, tgt):
+        assert self.embedding, "Model must have to be attributed in self.embedding"
+        assert self.pos_enc, "Model must have to be attributed in self.pos_enc"
+        assert self.main, "Model must have to be attributed in self.main"
+        assert self.fc, "Model must have to be attributed in self.fc"
+
+        if self.training:
+            tgt = self.embedding(tgt)
+            tgt = tgt + self.pos_enc(tgt)
+
+            src = self.embedding(src)
+            src = src + self.pos_enc(src)
+
+            out = self.main(src, tgt)
+            out = self.fc(out)
+            out = self.softmax(out)
+            return out
+        
+        else:
+            return self.inference(src, tgt)
+
 
 class DecoderOnlyLLM(Module):
     def __init__(

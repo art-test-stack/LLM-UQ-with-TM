@@ -4,10 +4,10 @@
 
 <!-- PROJECT SHIELDS -->
 
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
+<!-- [![Contributors][contributors-shield]][contributors-url] -->
+<!-- [![Forks][forks-shield]][forks-url] -->
 [![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
+<!-- [![Issues][issues-shield]][issues-url] -->
 [![Unlicense License][license-shield]][license-url]
 [![LinkedIn][linkedin-shield]][linkedin-url]
 
@@ -129,7 +129,11 @@ You should have Python (3.10) and pip installed on your machine. If you don't ha
    ```sh
    python main_llm.py -skip_training
    ```
-
+5. Download Llama models $MODEL_NAMES by following the tutorial from the official Github [here](https://github.com/meta-llama/llama-models).
+    ```sh
+    llama download --source meta --model-id meta-llama/Llama-3.1-8B --meta-url $LLAMA_31_URL
+    llama download --source meta --model-id meta-llama/Llama-3.2-1B   --meta-url $LLAMA_32_URL
+    ```
 ### To run on HPC with Slurm:
 
 1. Edit the '.env' file, according to the example 'example.env' file, to update the variables with the correct paths and settings. Then run the 'source' command to load the variables.
