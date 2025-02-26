@@ -1,4 +1,4 @@
-from tm_data.features import get_tensor_stats, compute_beta_dist_params, get_grad_spectrums
+from tm_data.features import get_tensor_stats, compute_beta_dist_params, get_grad_spectrums, compute_cosine_similarity
 
 import pandas as pd
 import numpy as np
@@ -64,6 +64,7 @@ class InputCSV:
         self.model = model
         self.init_data()
         self.world_size = world_size
+        self.last_layers = []
 
     def init_data(self, last_test_loss: Union[float, None] = None) -> None:
         self.current = InputData()
@@ -91,6 +92,7 @@ class InputCSV:
         # Temporary solution: take the stats at each batch iteration at store the mean of each stats at the end of the epoch
         # self.model.clean_nan()
         grads = self.model.get_grads()
+        grads = [ grad.copy() for grad in grads ]
         # try: 
         #     grads = self.model.get_grads()
         # except:
@@ -101,10 +103,14 @@ class InputCSV:
         # assert not torch.isnan(grads).any(), "Nan value in grads"
         self.compute_grad_stats(grads)
 
-    def compute_grad_stats(self, grads) -> None:
+
+    def compute_grad_stats(self, grads: List[torch.Tensor]) -> None:
         all_grads = get_concat_tensor(grads)
         last_layers_grads = get_last_layers(grads)
         all_ll_grads = get_concat_tensor(last_layers_grads)
+
+        grads_cosine_sim = compute_cosine_similarity(last_layers_grads, self.last_layers)
+        self.last_layers = [ grad_layer.copy().cpu() for grad_layer in last_layers_grads ] 
 
         # spectrums = get_grad_spectrums(grads)
         # all_spectras = get_concat_tensor(spectrums)
@@ -171,42 +177,4 @@ def update_csv(new_input: InputData, path: str) -> None:
     df = pd.DataFrame([{fn: getattr(new_input, fn) for fn in fields}])
     df.to_csv(path, mode='a', header=False, index=False)
 
-def store_data(
-        model: nn.Module, 
-        epoch:int, 
-        batch_size: int, 
-        device: torch.device
-    ) -> None:
-    try: 
-        grads = model.get_grads()
-    except:
-        grads = [p.grad for p in model.parameters() if p.grad]
-        if None in grads:
-            return
-    
-    all_grads = get_concat_tensor(grads)
-    last_layers_grads = get_last_layers(grads)
-    all_ll_grads = get_concat_tensor(last_layers_grads)
-
-    spectrums = get_grad_spectrums(grads)
-    all_spectras = get_concat_tensor(spectrums)
-    last_layers_spectrums = get_last_layers(spectrums)
-    all_ll_spectrums = get_concat_tensor(last_layers_spectrums)
-
-    grad_mean, grad_median, grad_std, grad_max, grad_min = get_tensor_stats(all_grads)
-    grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min = get_tensor_stats(all_ll_grads)
-    spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min = get_tensor_stats(all_spectras)
-    spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min = get_tensor_stats(all_ll_spectrums)
-
-    spectrum_alpha, spectrum_beta = compute_beta_dist_params(spectrum_mean, spectrum_std)
-    spectrum_ll_alpha, spectrum_ll_beta = compute_beta_dist_params(spectrum_ll_mean, spectrum_ll_std)
-
-    input_data = InputData(
-        grad_mean, grad_median, grad_std, grad_max, grad_min,
-        spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min, spectrum_alpha, spectrum_beta,
-        grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min,
-        spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min, spectrum_ll_alpha, spectrum_ll_beta,
-        epoch, batch_size
-    )
-    update_csv(input_data, 'dataset/uq_features')
 

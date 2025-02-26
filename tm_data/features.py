@@ -26,3 +26,16 @@ def get_grad_spectrums(grads: List[torch.Tensor]) -> List[torch.Tensor]:
             u, s, v = torch.svd(grad)
             spectrums.append(s)
     return spectrums
+
+def compute_cosine_similarity(grads1: List[torch.Tensor], grads2: List[torch.Tensor]) -> Union[None, torch.Tensor]:
+    cosine_dist = None
+    if grads1 is not None and grads2 is not None:
+        assert len(grads1) == len(grads2), "The number of layers should be the same"
+        cosine_dist = []
+        for layer_1, layer_2 in zip(grads1, grads2):
+            cos_dist = torch.matmul(layer_1, layer_2)
+            cos_dist /= torch.norm(layer_1) * torch.norm(layer_2)
+            cosine_dist.append(cos_dist)
+        
+    
+    return cosine_dist
