@@ -100,11 +100,13 @@ def fsdp_main(rank, world_size, args):
     model = LLM(**model_hyperparams).to(rank)
     if args.verbose:
         model.summary()
-
+    for name, param in model.named_parameters():
+        if torch.isnan(param).any() or torch.isinf(param).any():
+            print(f"NaN/Inf detected in parameter {name}")
     model_mem_required = model.memory_storage()
     model = FSDP(model,
         # auto_wrap_policy=my_auto_wrap_policy,
-        use_orig_params=True,
+        # use_orig_params=True,
         # cpu_offload=CPUOffload(offload_params=True)
     )
     # model.embedding = FSDP(model.embedding, use_orig_params=True) 
@@ -114,7 +116,7 @@ def fsdp_main(rank, world_size, args):
         print(f"Model memory size: {model_mem_required:,} bytes")
         print("FSDP model:", model)
     
-    opt = optim.Adam(model.parameters(), lr=args.lr / args.batch_size)
+    opt = optim.AdamW(model.parameters(), lr=args.lr / args.batch_size)
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.special_tokens[CONTROL_TOKENS.padding],reduction="sum")
     # scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
     # init_start_event.record()
@@ -136,6 +138,7 @@ def fsdp_main(rank, world_size, args):
         world_size=world_size,
         soa_token_id=tokenizer.special_tokens[CONTROL_TOKENS.start_of_answer],
         eoa_token_id=tokenizer.special_tokens[CONTROL_TOKENS.end_of_answer],
+        pad_token_id=tokenizer.special_tokens[CONTROL_TOKENS.padding]
     )
     # Model checkpoint saving, by saving to the rank0 CPU
     # https://pytorch.org/tutorials/intermediate/FSDP_adavnced_tutorial.html#model-checkpoint-saving-by-streaming-to-the-rank0-cpu
@@ -220,6 +223,8 @@ if __name__=="__main__":
     if WORLD_SIZE == 0:
         print("No GPU available")
         main_train(args)
+    elif WORLD_SIZE==1:
+        fsdp_main(rank=0, world_size=1, args=args)
     else:
         mp.spawn(fsdp_main,
             args=(WORLD_SIZE, args),

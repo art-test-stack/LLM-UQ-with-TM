@@ -104,6 +104,11 @@ class DecoderOnlyLLM(Module):
         out = self.softmax(out)
         return out
     
+        # decoder_layer = nn.TransformerDecoderLayer(d_model=model_size, nhead=8)
+        # self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
+        
+        # encoder_layer = nn.TransformerEncoderLayer(d_model=model_size, nhead=8)
+        # self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
     
 class LLM(Module):
     def __init__(
@@ -120,11 +125,6 @@ class LLM(Module):
         self.embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=model_size)
         self.pos_enc = PositionalEncoding(d_model=model_size, max_len=max_content)
 
-        # decoder_layer = nn.TransformerDecoderLayer(d_model=model_size, nhead=8)
-        # self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
-        
-        # encoder_layer = nn.TransformerEncoderLayer(d_model=model_size, nhead=8)
-        # self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
 
         self.main = nn.Transformer(
             model_size, 
@@ -153,13 +153,12 @@ class LLM(Module):
 
         src = self.pos_enc(src)
         tgt = self.pos_enc(tgt)
-
         mask = None
         if has_mask:
             device = src.device
             seq_len = tgt.shape[1]
             mask = torch.tril(torch.ones((seq_len, seq_len), device=device)).bool()
-            
+        
         out = self.main(src, tgt, tgt_mask=mask)
         out = self.fc(out)
         # out = self.softmax(out)

@@ -27,11 +27,12 @@ class GradStats:
     # spectrum_min: float | None = None
     # spectrum_alpha: float | None = None
     # spectrum_beta: float | None = None
-    grad_ll_mean: float | None = None
-    grad_ll_median: float | None = None
-    grad_ll_std: float | None = None
-    grad_ll_max: float | None = None
-    grad_ll_min: float | None = None
+
+    # grad_ll_mean: float | None = None
+    # grad_ll_median: float | None = None
+    # grad_ll_std: float | None = None
+    # grad_ll_max: float | None = None
+    # grad_ll_min: float | None = None
 
     # grad_ll_alpha: float | None = None
     # grad_ll_beta: float | None = None
@@ -64,7 +65,7 @@ class InputCSV:
         self.model = model
         self.init_data()
         self.world_size = world_size
-        self.last_layers = []
+        self.last_layers = None
 
     def init_data(self, last_test_loss: Union[float, None] = None) -> None:
         self.current = InputData()
@@ -77,6 +78,7 @@ class InputCSV:
 
         self.current.test_loss = test_loss
         self.current.var_test_loss = test_loss - self.last_test_loss if self.last_test_loss else test_loss
+        self.compute_grad_stats()
         # add a way to store loss variations
         self.compute_model_stats()
         self.update_csv()
@@ -92,51 +94,46 @@ class InputCSV:
         # Temporary solution: take the stats at each batch iteration at store the mean of each stats at the end of the epoch
         # self.model.clean_nan()
         grads = self.model.get_grads()
-        grads = [ grad.copy() for grad in grads ]
-        # try: 
-        #     grads = self.model.get_grads()
-        # except:
-        #     if None in grads:
-        #         return
-        #     else:
-        #         grads = [p.grad for p in self.model.parameters()]
-        # assert not torch.isnan(grads).any(), "Nan value in grads"
-        self.compute_grad_stats(grads)
+        grads = [ torch.clone(grad) for grad in grads ]
+        
+        # for i, grad in enumerate(grads):
+        #     print(f"grad {i}.shape", grad.shape)
+        self.current_grads = grads if not self.current_grads else [ grad + current for grad, current in zip(grads, self.current_grads) ]
+        # print("grads:", self.current_grads)
 
+    def compute_grad_stats(self) -> None:
+        grads = self.current_grads[0].view(-1) if len(self.current_grads) == 1 else get_concat_tensor(grads)
+        # last_layers_grads = get_last_layers(grads)
+        # all_ll_grads = get_concat_tensor(last_layers_grads)
 
-    def compute_grad_stats(self, grads: List[torch.Tensor]) -> None:
-        all_grads = get_concat_tensor(grads)
-        last_layers_grads = get_last_layers(grads)
-        all_ll_grads = get_concat_tensor(last_layers_grads)
-
-        grads_cosine_sim = compute_cosine_similarity(last_layers_grads, self.last_layers)
-        self.last_layers = [ grad_layer.copy().cpu() for grad_layer in last_layers_grads ] 
+        # grads_cosine_sim = compute_cosine_similarity(all_grads, self.last_layers)
+        # self.last_layers = all_grads # [ grad_layer.copy().cpu() for grad_layer in all_grads ] 
 
         # spectrums = get_grad_spectrums(grads)
         # all_spectras = get_concat_tensor(spectrums)
         # last_layers_spectrums = get_last_layers_spectrums(spectrums)
         # all_ll_spectrums = get_concat_tensor(last_layers_spectrums)
 
-        grad_mean, grad_median, grad_std, grad_max, grad_min = get_tensor_stats(all_grads)
-        grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min = get_tensor_stats(all_ll_grads)
+        grad_mean, grad_median, grad_std, grad_max, grad_min = get_tensor_stats(grads)
+        # grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min = get_tensor_stats(all_ll_grads)
         # spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min = get_tensor_stats(all_spectras)
         # spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min = get_tensor_stats(all_ll_spectrums)
 
         # spectrum_alpha, spectrum_beta = compute_beta_dist_params(spectrum_mean, spectrum_std)
         # spectrum_ll_alpha, spectrum_ll_beta = compute_beta_dist_params(spectrum_ll_mean, spectrum_ll_std)
 
-        current_grad = GradStats(
+        grad_stats = GradStats(
             grad_mean, grad_median, grad_std, grad_max, grad_min,
             # spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min, spectrum_alpha, spectrum_beta,
-            grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min,
+            # grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min,
             # spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min, spectrum_ll_alpha, spectrum_ll_beta
         )
-        self.current_grads.append(current_grad)
+        self.current_grad_stats.append(grad_stats)
 
     def compute_model_stats(self) -> None:
         grad_stats = GradStats()
         for fn in grad_stats.__dataclass_fields__.keys():
-            fn_values = [getattr(grad, fn) for grad in self.current_grads]
+            fn_values = [getattr(grad, fn) for grad in self.current_grad_stats]
             fn_mean = np.mean(fn_values)
             grad_stats.__setattr__(fn, fn_mean)
         self.current = InputData(
@@ -156,7 +153,8 @@ class InputCSV:
         df.to_csv(self.path, mode='a', header=False, index=False)
     
     def clean_grads(self) -> None:
-        self.current_grads = []
+        self.current_grad_stats = []
+        self.current_grads = None
         
 def get_concat_tensor(tensor: torch.Tensor) -> torch.Tensor:
     all_tensors = torch.cat([t.view(-1) for t in tensor])
