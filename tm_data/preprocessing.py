@@ -103,7 +103,7 @@ class InputCSV:
 
     def compute_grad_stats(self, grads) -> None:
         all_grads = get_concat_tensor(grads)
-        last_layers_grads = get_last_layers_grads(grads)
+        last_layers_grads = get_last_layers(grads)
         all_ll_grads = get_concat_tensor(last_layers_grads)
 
         # spectrums = get_grad_spectrums(grads)
@@ -156,13 +156,8 @@ def get_concat_tensor(tensor: torch.Tensor) -> torch.Tensor:
     all_tensors = torch.cat([t.view(-1) for t in tensor])
     return all_tensors
 
-def get_last_layers_spectrums(spectra: List[torch.Tensor], nb_last_layers: int = 5) -> List[torch.Tensor]:
-    last_layers_spectrums = [ spectrum for spectrum in spectra[-nb_last_layers:]]
-    return last_layers_spectrums
-
-def get_last_layers_grads(grads: List[torch.Tensor], nb_last_layers: int = 5) -> List[torch.Tensor]:
-    last_layers_grads = [ grad for grad in grads[-nb_last_layers:] ]
-    return last_layers_grads
+def get_last_layers(grads: List[torch.Tensor], nb_last_layers: int = 5) -> List[torch.Tensor]:
+    return [ grads[-layer] for layer in range(1, nb_last_layers + 1)]
 
 def create_csv(path: str) -> None:
     with open(path, 'w') as f:
@@ -190,12 +185,12 @@ def store_data(
             return
     
     all_grads = get_concat_tensor(grads)
-    last_layers_grads = get_last_layers_grads(grads)
+    last_layers_grads = get_last_layers(grads)
     all_ll_grads = get_concat_tensor(last_layers_grads)
 
     spectrums = get_grad_spectrums(grads)
     all_spectras = get_concat_tensor(spectrums)
-    last_layers_spectrums = get_last_layers_spectrums(spectrums)
+    last_layers_spectrums = get_last_layers(spectrums)
     all_ll_spectrums = get_concat_tensor(last_layers_spectrums)
 
     grad_mean, grad_median, grad_std, grad_max, grad_min = get_tensor_stats(all_grads)
