@@ -19,7 +19,13 @@ source ${PIP_DIR}
 # pip install -r requirements.txt
 echo ${BATCH_SIZE}
 python -c "import torch; print(torch.__version__, torch.version.cuda)"
+# PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+#     python main_fsdp.py  --batch-size ${BATCH_SIZE} --epochs ${EPOCHS} --lr ${LEARNING_RATE} \
+#         --gamma ${GAMMA} --seed ${SEED} --save-model --patience ${PATIENCE} --min-delta ${MIN_DELTA} \
+#         --model-dir ${MODEL_DIR}
+        # --verbose
+
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-    python main_fsdp.py  --batch-size ${BATCH_SIZE} --epochs ${EPOCHS} --lr ${LEARNING_RATE} \
+    torchrun main_fsdp.py  --batch-size ${BATCH_SIZE} --epochs ${EPOCHS} --lr ${LEARNING_RATE} \
         --gamma ${GAMMA} --seed ${SEED} --save-model --patience ${PATIENCE} --min-delta ${MIN_DELTA} \
-        # --verbose ${VERBOSE}
+        --model-dir ${MODEL_DIR}

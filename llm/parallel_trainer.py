@@ -26,7 +26,7 @@ from torch.distributed.fsdp.wrap import (
 
 from typing import Callable, Dict, Union
 from tqdm import tqdm
-
+from pathlib import Path
 
 class ParallelTrainer:
     def __init__(
@@ -38,6 +38,7 @@ class ParallelTrainer:
             rank: torch.device,
             world_size: int,
             name: str = "model",
+            model_dir: str = "models/",
             soa_token_id: int = 0,
             eoa_token_id: int = 0
         ) -> None:
@@ -48,10 +49,11 @@ class ParallelTrainer:
         self.rank = rank
         self.world_size = world_size
         self.name = name
-        self.path = f"models/{self.name}.pt"
+        self.path = Path(f"{model_dir}/{self.name}.pt")
         assert not soa_token_id == eoa_token_id, "Start of answer and end of answer tokens should be different"
         self.soa_token_id = soa_token_id
         self.eoa_token_id = eoa_token_id
+        self.verbose = True
 
     def fit(
             self, 
@@ -79,7 +81,7 @@ class ParallelTrainer:
                 if train_kwargs["sampler"]:
                     train_kwargs["sampler"].set_epoch(epoch)
                 train_loss = self._train_epoch(train_loader)
-                test_loss = self._test_epoch(val_loader)
+                test_loss = train_loss # self._test_epoch(val_loader)
                 if self.rank == 0:
                     self.csv_object(test_loss)
 
@@ -89,7 +91,7 @@ class ParallelTrainer:
                 tepoch.set_postfix(train_loss=train_loss, test_loss=test_loss)
 
                 early_stopping(test_loss)
-                if self.rank == 0 and early_stopping.early_stop:
+                if self.rank == 0 and early_stopping.save_model:
                     if self.world_size > 1:
                         self.save_modelcheckpoint()
                     else:
@@ -107,15 +109,19 @@ class ParallelTrainer:
 
     def _train_epoch(self, train_set) -> float:
         self.model.train()
-
         ddp_loss = torch.zeros(2).to(self.rank)
 
         for src, tgt in train_set:
+            self.model.zero_grad()
             assert not torch.isnan(src).any(), "NaN found in sources!"
             assert not torch.isnan(tgt).any(), "NaN found in targets!"
             src, tgt = src.to(self.rank), tgt.to(self.rank)
             self.optimizer.zero_grad()
             output = self.model(src, tgt)
+            # if self.verbose:
+            #     print("Training")
+            #     print("output.shape", output.shape)
+            #     print("tgt.shape", tgt.shape)
             # tgt = nn.functional.one_hot(tgt.view(-1), num_classes=self.model.vocab_size)
             loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
             loss.backward()
@@ -126,7 +132,7 @@ class ParallelTrainer:
             
             if self.rank == 0:
                 self.csv_object.update_model()
-            break
+            # break
             
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         test_loss = ddp_loss[0] / ddp_loss[1]
@@ -141,18 +147,27 @@ class ParallelTrainer:
                 assert not torch.isnan(src).any(), "NaN found in sources!"
                 assert not torch.isnan(tgt).any(), "NaN found in targets!"
                 src, tgt = src.to(self.rank), tgt.to(self.rank)
-                output = self.infer(src, testing=True)
-                loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
-                
-                ddp_loss[0] += loss.item()
-                ddp_loss[1] += len(src)
-                break
+                for i in range(0, self.model.max_content - 1):
+                    output = self.model(src)
+                    output = output.view(-1, self.model.vocab_size)
+                    
+                    loss = self.criterion(output, tgt).item()
+                    # if self.verbose:
+                    #     print("Training")
+                    #     print("output.shape", output.shape)
+                    #     print("tgt.shape", tgt.shape)
+                    #     self.verbose = False
+                    
+                    ddp_loss[0] += loss.item()
+                    ddp_loss[1] += i
+                # break
                 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         test_loss = ddp_loss[0] / ddp_loss[1]
         return float(test_loss.cpu().numpy())
     
     def save_model(self):
+        print(f"Try to save model at {self.path}")
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
@@ -169,34 +184,42 @@ class ParallelTrainer:
         return self.model
     
     def save_modelcheckpoint(self):
+        print(f"Try to save model checkpoint at {self.path}")
         save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
         with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, save_policy):
-            cpu_state = self.model.state_dict()
+            model_cpu_state = self.model.state_dict()
+            opt_cpu_state = self.optimizer.state_dict()
+            loss_cpu_state = self.criterion
 
         if self.rank == 0:
         # save_name = file_save_name + "-" + time_of_run + "-" + currEpoch
-            torch.save(cpu_state, self.path)
+            torch.save({
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'loss': self.criterion
+            }, self.path)
 
 
-    def infer(self, src, tokenizer=None, testing=False):
+    def infer(self, seq, tokenizer=None, testing=False):
         self.model.eval() 
-        device = src.device 
+        device = seq.device 
         # device = next(self.model.parameters()).device 
 
         if tokenizer:
-            assert type(src) == str or type(src) == list, "If Tokenizer given for inference, src type should be str or list of str"
-            encodings = tokenizer(src, return_tensors=True, padding=True, truncation=True)
-            src = encodings.to(device)
+            assert type(seq) == str or type(seq) == list, "If Tokenizer given for inference, seq type should be str or list of str"
+            encodings = tokenizer(seq, return_tensors=True, padding=True, truncation=True)
+            seq = encodings.to(device)
 
-        batch_size = src.shape[0]
+        batch_size = seq.shape[0]
 
         generated_tokens = torch.full((batch_size, 1), self.soa_token_id, device=device, dtype=torch.long)
         finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        propabilities = nn.functional.one_hot(generated_tokens, num_classes=self.model.vocab_size).cpu()
 
-        for _ in range(self.model.max_content):
+        for _ in range(self.model.max_content - 1):
             with torch.no_grad():
-                output = self.model(src, generated_tokens, has_mask=True) 
-
+                output = self.model(seq, generated_tokens, has_mask=True) 
+            propabilities = torch.cat([propabilities, output.cpu()], dim=1)
             next_tokens = torch.argmax(output[:, -1, :], dim=-1, keepdim=True)
             generated_tokens = torch.cat([generated_tokens, next_tokens], dim=1)
 
@@ -206,8 +229,9 @@ class ParallelTrainer:
                     break
         
         if tokenizer:
-            answers = [tokenizer.decode(seq.tolist()) for seq in generated_tokens]
+            return [tokenizer.decode(seq.tolist()) for seq in generated_tokens]
 
-        return answers
+        return propabilities.to(self.rank)
 
 
+    

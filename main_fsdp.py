@@ -121,7 +121,7 @@ def fsdp_main(rank, world_size, args):
     
     free_memory = get_cuda_allocation(verbose=args.verbose)
 
-    if args.verbose:
+    if args.verbose and False:
         assert free_memory >= model_mem_required, f"""MEMORY ERROR: Free memory space is to small to store the model on cuda. Try to allocate more memory. 
             Current rank: {rank}.
             Free memory: {free_memory:,} bytes.
@@ -139,7 +139,8 @@ def fsdp_main(rank, world_size, args):
     )
     # Model checkpoint saving, by saving to the rank0 CPU
     # https://pytorch.org/tutorials/intermediate/FSDP_adavnced_tutorial.html#model-checkpoint-saving-by-streaming-to-the-rank0-cpu
-
+    torch.cuda.set_per_process_memory_fraction(0.9, device=rank)
+    torch.backends.cudnn.benchmark = True
     try:
         trainer.load_model()
     except:
@@ -181,9 +182,9 @@ if __name__=="__main__":
         epilog="Enjoy the program! :)",
     )
     parser.add_argument('--batch-size', type=int, default=16, metavar='N',
-                        help='input batch size for training (default: 32)')
-    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
-                        help='input batch size for testing (default: 1000)')
+                        help='input batch size for training (default: 16)')
+    parser.add_argument('--test-batch-size', type=int, default=8, metavar='N',
+                        help='input batch size for testing (default: 8)')
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 5)')
     parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
@@ -194,9 +195,9 @@ if __name__=="__main__":
                         help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
-    parser.add_argument('--save-model', action='store_true', default=False,
+    parser.add_argument('--save-model', action='store_true', default=False, 
                         help='For Saving the current Model')
-    parser.add_argument('--verbose', action='store_true', default=False,
+    parser.add_argument('--verbose', action='store_true', default=False, 
                         help='For Showing some more information')
     parser.add_argument('--patience', type=int, default=25, metavar='P',
                         help='Early stopping patience (default: 25)')
@@ -208,6 +209,8 @@ if __name__=="__main__":
         help="Skip the training and only evaluate the model",
         action="store_true",
     )
+    parser.add_argument('--model-dir', type=str, default="models/", metavar='MD',
+                        help='Directory where the model is saved')
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
