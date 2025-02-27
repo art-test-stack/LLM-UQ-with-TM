@@ -1,0 +1,3 @@
+[submodule "Label-Critic-TM"]
+	path = Label-Critic-TM
+	url = git@github.com:Ahmed-Abouzeid/Label-Critic-TM.git
