@@ -42,7 +42,8 @@ class ParallelTrainer:
             model_dir: str = "models/",
             soa_token_id: int = 0,
             eoa_token_id: int = 0,
-            pad_token_id: int = 0
+            pad_token_id: int = 0,
+            len_answer: int = 0
         ) -> None:
         self.model = model
         self.optimizer = optimizer
@@ -56,6 +57,7 @@ class ParallelTrainer:
         self.soa_token_id = soa_token_id
         self.eoa_token_id = eoa_token_id
         self.pad_token_id = pad_token_id
+        self.len_answer = len_answer
         self.verbose = True
 
     def fit(
@@ -148,30 +150,36 @@ class ParallelTrainer:
             src, tgt = next(iter(val_set))
             assert not torch.isnan(src).any(), "NaN found in sources!"
             assert not torch.isnan(tgt).any(), "NaN found in targets!"
-
             src, tgt = src.to(self.rank), tgt.to(self.rank)
-            batch_size, seq_len = tgt.shape
+
+            # output = self.model(src, tgt)
+            # loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
+            # ddp_loss[0] += loss.item()
+            # ddp_loss[1] += len(src)
+
+            batch_size = tgt.shape[0]
+            seq_len = self.len_answer
 
             output = torch.full((batch_size, 1), self.soa_token_id, dtype=torch.long, device=self.rank)
-            # pad_tokens = torch.full((batch_size, seq_len - 1), self.pad_token_id, dtype=torch.long, device=self.rank)
+            # # pad_tokens = torch.full((batch_size, seq_len - 1), self.pad_token_id, dtype=torch.long, device=self.rank)
             # output = torch.cat([output, pad_tokens], dim=1)
 
             total_loss = 0.0
             total_tokens = 0
-            if use_beam_search:
-                # TODO
-                predicted_output = self._beam_search(src, beam_width)
-            else:
-                for i in range(seq_len - 1):
-                    logits = self.model(src, output, has_mask=False)
-                    logits = logits[:, -1, :] 
+            # if use_beam_search:
+            #     # TODO
+            #     predicted_output = self._beam_search(src, beam_width)
+            # else:
+            for i in range(seq_len - 1):
+                logits = self.model(src, output, has_mask=False)
+                logits = logits[:, -1, :] 
 
-                    loss = self.criterion(logits, tgt[:, i])
-                    total_loss += loss.item()
-                    total_tokens += batch_size
+                loss = self.criterion(logits, tgt[:, i])
+                total_loss += loss.item()
+                total_tokens += batch_size
 
-                    next_token = logits.argmax(dim=-1, keepdim=True)
-                    output = torch.cat([output, next_token], dim=1)
+                next_token = logits.argmax(dim=-1, keepdim=True)
+                output = torch.cat([output, next_token], dim=1)
 
             ddp_loss[0] += total_loss 
             ddp_loss[1] += total_tokens
@@ -207,7 +215,7 @@ class ParallelTrainer:
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'loss': self.criterion
+            # 'loss': self.criterion
         }, self.path)
         # self.save_grads()
     
@@ -215,8 +223,7 @@ class ParallelTrainer:
         checkpoint = torch.load(self.path, weights_only=False)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.criterion = checkpoint['loss']
-        self.load_grads()
+        # self.criterion.load_state_dict(checkpoint['loss'])
         return self.model
     
     def save_modelcheckpoint(self):
@@ -225,14 +232,14 @@ class ParallelTrainer:
         with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, save_policy):
             model_cpu_state = self.model.state_dict()
             opt_cpu_state = self.optimizer.state_dict()
-            loss_cpu_state = self.criterion
+            # loss_cpu_state = self.criterion
 
         if self.rank == 0:
         # save_name = file_save_name + "-" + time_of_run + "-" + currEpoch
             torch.save({
-                'model_state_dict': self.model.state_dict(),
-                'optimizer_state_dict': self.optimizer.state_dict(),
-                'loss': self.criterion
+                'model_state_dict': model_cpu_state, #self.model.state_dict(),
+                'optimizer_state_dict': opt_cpu_state, #self.optimizer.state_dict(),
+                # 'loss': self.criterion
             }, self.path)
 
 

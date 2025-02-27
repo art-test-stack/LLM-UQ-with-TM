@@ -63,7 +63,7 @@ def fsdp_main(rank, world_size, args):
     train, test, val = get_data(tokenizer)
     
     sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=True)
-    sampler2 = DistributedSampler(val, rank=rank, num_replicas=world_size)
+    sampler2 = DistributedSampler(val, rank=rank, num_replicas=world_size, shuffle=True)
     sampler3 = DistributedSampler(test, rank=rank, num_replicas=world_size)
 
     train_kwargs = { 'batch_size': args.batch_size, 'sampler': sampler1 }
@@ -106,7 +106,7 @@ def fsdp_main(rank, world_size, args):
     model_mem_required = model.memory_storage()
     model = FSDP(model,
         # auto_wrap_policy=my_auto_wrap_policy,
-        # use_orig_params=True,
+        use_orig_params=world_size > 1,
         # cpu_offload=CPUOffload(offload_params=True)
     )
     # model.embedding = FSDP(model.embedding, use_orig_params=True) 
@@ -121,6 +121,8 @@ def fsdp_main(rank, world_size, args):
     # scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
     # init_start_event.record()
     
+    torch.cuda.set_per_process_memory_fraction(0.9, device=rank)
+    torch.backends.cudnn.benchmark = True
     free_memory = get_cuda_allocation(verbose=args.verbose)
 
     if args.verbose and False:
@@ -136,14 +138,15 @@ def fsdp_main(rank, world_size, args):
         csv_object=csv_object,
         rank=rank,
         world_size=world_size,
+        name="make-tm-dataset.80g.",
         soa_token_id=tokenizer.special_tokens[CONTROL_TOKENS.start_of_answer],
         eoa_token_id=tokenizer.special_tokens[CONTROL_TOKENS.end_of_answer],
-        pad_token_id=tokenizer.special_tokens[CONTROL_TOKENS.padding]
+        pad_token_id=tokenizer.special_tokens[CONTROL_TOKENS.padding],
+        len_answer=val.max_a_len
     )
     # Model checkpoint saving, by saving to the rank0 CPU
     # https://pytorch.org/tutorials/intermediate/FSDP_adavnced_tutorial.html#model-checkpoint-saving-by-streaming-to-the-rank0-cpu
-    torch.cuda.set_per_process_memory_fraction(0.9, device=rank)
-    torch.backends.cudnn.benchmark = True
+    
     try:
         trainer.load_model()
     except:

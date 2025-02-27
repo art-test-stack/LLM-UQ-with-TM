@@ -95,14 +95,14 @@ class InputCSV:
         # self.model.clean_nan()
         grads = self.model.get_grads()
         grads = [ torch.clone(grad) for grad in grads ]
-        
+    
         # for i, grad in enumerate(grads):
         #     print(f"grad {i}.shape", grad.shape)
         self.current_grads = grads if not self.current_grads else [ grad + current for grad, current in zip(grads, self.current_grads) ]
-        # print("grads:", self.current_grads)
+        # print("current_grads:", self.current_grads)
 
     def compute_grad_stats(self) -> None:
-        grads = self.current_grads[0].view(-1) if len(self.current_grads) == 1 else get_concat_tensor(grads)
+        grads = self.current_grads[0].view(-1) if len(self.current_grads) == 1 else get_concat_tensor(self.current_grads)
         # last_layers_grads = get_last_layers(grads)
         # all_ll_grads = get_concat_tensor(last_layers_grads)
 
