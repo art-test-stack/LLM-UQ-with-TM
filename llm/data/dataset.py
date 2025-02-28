@@ -1,4 +1,4 @@
-from data.tokenizer import Tokenizer, CONTROL_TOKENS
+from llm.data.tokenizer import Tokenizer, CONTROL_TOKENS
 import datasets
 
 import torch

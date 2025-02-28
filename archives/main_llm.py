@@ -1,5 +1,5 @@
-from data.dataset import get_data
-from data.tokenizer import Tokenizer
+from llm.data.dataset import get_data
+from llm.data.tokenizer import Tokenizer
 
 from llm.model import LLM
 from archives.trainer import Trainer

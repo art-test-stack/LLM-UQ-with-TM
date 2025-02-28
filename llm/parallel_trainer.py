@@ -1,4 +1,4 @@
-from data.tokenizer import CONTROL_TOKENS
+from llm.data.tokenizer import CONTROL_TOKENS
 from tm_data.preprocessing import InputCSV
 from llm.utils import EarlyStopping
 from llm.model import LLM
@@ -194,7 +194,7 @@ class ParallelTrainer:
         batch_size = src.shape[0]
         beams = [(torch.full((batch_size, 1), self.soa_token_id, device=self.rank), 0)]  
         
-        for _ in range(self.model.max_content - 1):
+        for _ in range(self.len_answer - 1):
             candidates = []
             for seq, score in beams:
                 logits = self.model(src, seq)[:, -1, :] 
@@ -220,9 +220,13 @@ class ParallelTrainer:
         # self.save_grads()
     
     def load_model(self):
-        checkpoint = torch.load(self.path, weights_only=False)
+        try:
+            checkpoint = torch.load(self.path, weights_only=False)
+        except:
+            print(f"Load model on GPU failed, trying to load on CPU")
+            checkpoint = torch.load(self.path, weights_only=False, map_location=torch.device('cpu'))
         self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         # self.criterion.load_state_dict(checkpoint['loss'])
         return self.model
     

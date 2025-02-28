@@ -1,7 +1,7 @@
 from archives.main_llm import main_train
 
-from data.dataset import get_data
-from data.tokenizer import Tokenizer, CONTROL_TOKENS
+from llm.data.dataset import get_data
+from llm.data.tokenizer import Tokenizer, CONTROL_TOKENS
 
 from llm.model import LLM
 from llm.parallel_trainer import ParallelTrainer
