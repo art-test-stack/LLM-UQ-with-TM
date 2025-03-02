@@ -85,6 +85,7 @@ class InputCSV:
         self.init_data(last_test_loss=test_loss)
     
     def update_hyperparameters(self, epoch: int, batch_size: int) -> None:
+        #TODO fine a new name
         self.current.epoch = epoch
         self.current.batch_size = batch_size
 

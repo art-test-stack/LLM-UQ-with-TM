@@ -7,9 +7,14 @@ dataset/*
 logs/*
 !logs/README.md
 
+
+
 notebooks/*
 !notebooks/README.md
 
+pycuda_2025.1
+pycuda
+tmu
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

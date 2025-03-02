@@ -146,43 +146,43 @@ class ParallelTrainer:
         ddp_loss = torch.zeros(2, device=self.rank)  # [total loss, total tokens]
 
         with torch.no_grad():
-            # for src, tgt in val_set:
-            src, tgt = next(iter(val_set))
-            assert not torch.isnan(src).any(), "NaN found in sources!"
-            assert not torch.isnan(tgt).any(), "NaN found in targets!"
-            src, tgt = src.to(self.rank), tgt.to(self.rank)
+            for src, tgt in val_set:
+            # src, tgt = next(iter(val_set))
+                assert not torch.isnan(src).any(), "NaN found in sources!"
+                assert not torch.isnan(tgt).any(), "NaN found in targets!"
+                src, tgt = src.to(self.rank), tgt.to(self.rank)
 
-            # output = self.model(src, tgt)
-            # loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
-            # ddp_loss[0] += loss.item()
-            # ddp_loss[1] += len(src)
+                # output = self.model(src, tgt)
+                # loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
+                # ddp_loss[0] += loss.item()
+                # ddp_loss[1] += len(src)
 
-            batch_size = tgt.shape[0]
-            seq_len = self.len_answer
+                batch_size = tgt.shape[0]
+                seq_len = self.len_answer
 
-            output = torch.full((batch_size, 1), self.soa_token_id, dtype=torch.long, device=self.rank)
-            # # pad_tokens = torch.full((batch_size, seq_len - 1), self.pad_token_id, dtype=torch.long, device=self.rank)
-            # output = torch.cat([output, pad_tokens], dim=1)
+                output = torch.full((batch_size, 1), self.soa_token_id, dtype=torch.long, device=self.rank)
+                # # pad_tokens = torch.full((batch_size, seq_len - 1), self.pad_token_id, dtype=torch.long, device=self.rank)
+                # output = torch.cat([output, pad_tokens], dim=1)
 
-            total_loss = 0.0
-            total_tokens = 0
-            # if use_beam_search:
-            #     # TODO
-            #     predicted_output = self._beam_search(src, beam_width)
-            # else:
-            for i in range(seq_len - 1):
-                logits = self.model(src, output, has_mask=False)
-                logits = logits[:, -1, :] 
+                total_loss = 0.0
+                total_tokens = 0
+                # if use_beam_search:
+                #     # TODO
+                #     predicted_output = self._beam_search(src, beam_width)
+                # else:
+                for i in range(seq_len - 1):
+                    logits = self.model(src, output, has_mask=False)
+                    logits = logits[:, -1, :] 
 
-                loss = self.criterion(logits, tgt[:, i])
-                total_loss += loss.item()
-                total_tokens += batch_size
+                    loss = self.criterion(logits, tgt[:, i])
+                    total_loss += loss.item()
+                    total_tokens += batch_size
 
-                next_token = logits.argmax(dim=-1, keepdim=True)
-                output = torch.cat([output, next_token], dim=1)
+                    next_token = logits.argmax(dim=-1, keepdim=True)
+                    output = torch.cat([output, next_token], dim=1)
 
-            ddp_loss[0] += total_loss 
-            ddp_loss[1] += total_tokens
+                ddp_loss[0] += total_loss 
+                ddp_loss[1] += total_tokens
             
 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)        
@@ -228,6 +228,7 @@ class ParallelTrainer:
         self.model.load_state_dict(checkpoint['model_state_dict'])
         # self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         # self.criterion.load_state_dict(checkpoint['loss'])
+        print("Model saved!")
         return self.model
     
     def save_modelcheckpoint(self):
@@ -245,6 +246,7 @@ class ParallelTrainer:
                 'optimizer_state_dict': opt_cpu_state, #self.optimizer.state_dict(),
                 # 'loss': self.criterion
             }, self.path)
+        print("Model checkpoint saved!")
 
 
     def infer(self, seq, tokenizer=None, testing=False):
