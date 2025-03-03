@@ -6,6 +6,8 @@ scikit_learn
 scipy
 tiktoken
 torch
+torchtext
+torchmetrics
 tqdm
 llama-stack
 pytorch-lightning

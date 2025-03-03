@@ -2,7 +2,9 @@ from llm.module import Module
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 
+from transformers import LogitsProcessor
 
 import math
 
@@ -12,6 +14,25 @@ VOCAB_SIZE = 10000
 N_HEAD = 8
 N_ENC_LAYERS = 6
 N_DEC_LAYERS = 6
+
+class RepetitionPenaltyProcessor(LogitsProcessor):
+    def __init__(self, penalty):
+        self.penalty = penalty
+
+    def __call__(self, input_ids, scores):
+        """Applies repetition penalty to logits."""
+        batch_size, vocab_size = scores.shape
+        for i in range(batch_size):
+            unique_tokens = set(map(int, input_ids[i].tolist())) 
+            for token in unique_tokens:
+                if 0 <= token < vocab_size: 
+                    if scores[i, token] < 0:
+                        scores[i, token] *= self.penalty
+                    else:
+                        scores[i, token] /= self.penalty
+        return scores
+    
+
 
 class PositionalEncoding(nn.Module):
     def __init__(
@@ -163,3 +184,85 @@ class LLM(Module):
         out = self.fc(out)
         # out = self.softmax(out)
         return out
+
+    # def generate(self, src: torch.Tensor, tokenizer, repetition_penalty = 1.2, beam_width=3, len_answer=16, retrieve_probs=False):
+    #     """Performs beam search decoding."""
+    #     self.eval()
+    #     with torch.no_grad():
+    #         batch_size = src.shape[0]
+    #         beams = [(torch.full((batch_size, 1), tokenizer.soa_token_id, device=src.device), 0)] 
+    #         rep_penalty_processor = RepetitionPenaltyProcessor(repetition_penalty)
+    #         generated = torch.full((batch_size, len_answer), tokenizer.pad_token_id, device=src.device) 
+    #         probabilities = torch.zeros((batch_size, len_answer, self.vocab_size), device=src.device) if retrieve_probs else None
+
+    #         for t in range(len_answer):
+    #             candidates = []
+    #             for seq, score in beams:
+    #                 logits = self(src, seq, has_mask=True)[:, -1, :] 
+
+    #                 logits = rep_penalty_processor(seq, logits)
+    #                 probs = F.log_softmax(logits, dim=-1)
+    #                 if retrieve_probs:
+    #                     probabilities[:, t] = probs
+    #                 top_k_probs, top_k_indices = probs.topk(beam_width, dim=-1) 
+
+    #                 for i in range(beam_width):
+    #                     new_seq = torch.cat([seq, top_k_indices[:, i].unsqueeze(-1)], dim=1)
+    #                     new_score = score + top_k_probs[:, i].sum().item()
+    #                     candidates.append((new_seq, new_score))
+                
+    #             beams = sorted(candidates, key=lambda x: x[1], reverse=True)[:beam_width]
+    #             best_seq = beams[0][0][:, 1:]
+
+    #             generated[:, t] = best_seq[:, -1] 
+
+    #             if (best_seq[:, -1] == tokenizer.eoa_token_id).all():
+    #                 break
+
+    #     return generated
+    
+    def generate(self, src: torch.Tensor, tokenizer, repetition_penalty = 1.2, beam_width=3, len_answer=16, retrieve_probs=False):
+        """Performs beam search decoding."""
+        self.eval()
+        with torch.no_grad():
+            batch_size = src.shape[0]
+            beams = [(torch.full((batch_size, 1), tokenizer.soa_token_id, device=src.device), 0, torch.zeros((batch_size, len_answer, self.vocab_size), device=src.device) if retrieve_probs else None)] 
+            rep_penalty_processor = RepetitionPenaltyProcessor(repetition_penalty)
+            generated = torch.full((batch_size, len_answer), tokenizer.pad_token_id, device=src.device) 
+            probabilities = torch.zeros((batch_size, len_answer, self.vocab_size), device=src.device) if retrieve_probs else None
+
+            for t in range(len_answer):
+                candidates = []
+                for seq, score, probs in beams:
+                    logits = self(src, seq, has_mask=True)[:, -1, :] 
+                    if logits.isnan().any():
+                        print("seq iter", t)
+                        print("seq", logits)
+                        print("src", src)
+                        print("seq", seq)
+                        break
+                    if retrieve_probs:
+                        probs[:,t] = logits.clone()
+
+                    logits = rep_penalty_processor(seq, logits)
+                    log_probs = F.log_softmax(logits, dim=-1)
+                    top_k_probs, top_k_indices = log_probs.topk(beam_width, dim=-1) 
+
+                    for i in range(beam_width):
+                        new_seq = torch.cat([seq, top_k_indices[:, i].unsqueeze(-1)], dim=1)
+                        new_score = score + top_k_probs[:, i].sum().item()
+                        new_probs = probs.clone() if retrieve_probs else None
+                        candidates.append((new_seq, new_score, new_probs))
+                
+                beams = sorted(candidates, key=lambda x: x[1], reverse=True)[:beam_width]
+                best_seq = beams[0][0][:, 1:]
+
+                generated[:, t] = best_seq[:, -1] 
+
+                if (best_seq[:, -1] == tokenizer.eoa_token_id).all():
+                    break
+
+            if retrieve_probs:
+                probabilities = beams[0][2]
+
+        return generated, probabilities if retrieve_probs else generated

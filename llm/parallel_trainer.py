@@ -24,7 +24,6 @@ from torch.distributed.fsdp.wrap import (
     enable_wrap,
     wrap,
 )
-
 from typing import Callable, Dict, Union
 from tqdm import tqdm
 from pathlib import Path
@@ -59,6 +58,9 @@ class ParallelTrainer:
         self.pad_token_id = pad_token_id
         self.len_answer = len_answer
         self.verbose = True
+        self.metrics = {
+
+        }
 
     def fit(
             self, 
@@ -134,81 +136,109 @@ class ParallelTrainer:
                 self.optimizer.zero_grad()
             # self.optimizer.step()
             ddp_loss[0] += loss.item()
-            ddp_loss[1] += len(src)
+            ddp_loss[1] += src.size(0) * src.size(1)
             
             
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         test_loss = ddp_loss[0] / ddp_loss[1]
         return float(test_loss.cpu().numpy())
     
-    def _val_epoch(self, val_set, use_beam_search=False, beam_width=3) -> float:
+    def _val_epoch(self, val_set: DataLoader, mode: str ="greedy") -> float:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)  # [total loss, total tokens]
 
         with torch.no_grad():
-            # for src, tgt in val_set:
-            src, tgt = next(iter(val_set))
-            assert not torch.isnan(src).any(), "NaN found in sources!"
-            assert not torch.isnan(tgt).any(), "NaN found in targets!"
-            src, tgt = src.to(self.rank), tgt.to(self.rank)
+            for src, tgt in val_set:
+            # src, tgt = next(iter(val_set))
+                assert not torch.isnan(src).any(), "NaN found in sources!"
+                assert not torch.isnan(tgt).any(), "NaN found in targets!"
+                src, tgt = src.to(self.rank), tgt.to(self.rank)
 
-            # output = self.model(src, tgt)
-            # loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
-            # ddp_loss[0] += loss.item()
-            # ddp_loss[1] += len(src)
+                batch_size = tgt.shape[0]
+                seq_len = self.len_answer
 
-            batch_size = tgt.shape[0]
-            seq_len = self.len_answer
+                output = torch.full((batch_size, 1), self.soa_token_id, dtype=torch.long, device=self.rank)
 
-            output = torch.full((batch_size, 1), self.soa_token_id, dtype=torch.long, device=self.rank)
-            # # pad_tokens = torch.full((batch_size, seq_len - 1), self.pad_token_id, dtype=torch.long, device=self.rank)
-            # output = torch.cat([output, pad_tokens], dim=1)
+                for i in range(seq_len - 1):
+                    logits = self.model(src, output, has_mask=False)
+                    logits = logits[:, -1, :] 
 
-            total_loss = 0.0
-            total_tokens = 0
-            # if use_beam_search:
-            #     # TODO
-            #     predicted_output = self._beam_search(src, beam_width)
-            # else:
-            for i in range(seq_len - 1):
-                logits = self.model(src, output, has_mask=False)
-                logits = logits[:, -1, :] 
+                    loss = self.criterion(logits, tgt[:, i])
+                    ddp_loss[0] += loss.item()
+                    ddp_loss[1] += batch_size 
 
-                loss = self.criterion(logits, tgt[:, i])
-                total_loss += loss.item()
-                total_tokens += batch_size
+                    next_token = logits.argmax(dim=-1, keepdim=True)
+                    output = torch.cat([output, next_token], dim=1)
 
-                next_token = logits.argmax(dim=-1, keepdim=True)
-                output = torch.cat([output, next_token], dim=1)
-
-            ddp_loss[0] += total_loss 
-            ddp_loss[1] += total_tokens
-            
+                    finished |= (next_token.squeeze(1) == self.eoa_token_id)
+                    if finished.all():
+                        padding = torch.full((batch_size, seq_len - output.size(1)), self.pad_token_id, dtype=torch.long, device=self.rank)
+                        output = torch.cat([output, padding], dim=1)
+                        break
 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)        
         test_loss = ddp_loss[0] / ddp_loss[1]
         return float(test_loss.cpu().numpy())
+    
+    def _infer(self, seq, mode: str = "greedy"):
+        self.model.eval() 
+        device = seq.device
 
-    def _beam_search(self, src, beam_width=3):
-        """Performs beam search decoding."""
-        batch_size = src.shape[0]
-        beams = [(torch.full((batch_size, 1), self.soa_token_id, device=self.rank), 0)]  
-        
+        batch_size = seq.shape[0]
+        if mode == "greedy":
+            return self._greedy(seq, batch_size, device)
+        elif mode == "beam":
+
+            return self._beam_search(seq, batch_size, device)
+        else:
+            return self._greedy(seq, batch_size, device)
+
+    def _greedy(self, seq, batch_size, device):
+        generated_tokens = torch.full((batch_size, 1), self.soa_token_id, device=device, dtype=torch.long)
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        propabilities = nn.functional.one_hot(generated_tokens, num_classes=self.model.vocab_size).cpu()
+
         for _ in range(self.len_answer - 1):
-            candidates = []
-            for seq, score in beams:
-                logits = self.model(src, seq)[:, -1, :] 
-                probs = F.log_softmax(logits, dim=-1)
-                top_k_probs, top_k_indices = probs.topk(beam_width, dim=-1) 
+            with torch.no_grad():
+                output = self.model(seq, generated_tokens, has_mask=True) 
+            propabilities = torch.cat([propabilities, output.cpu()], dim=1)
+            next_tokens = torch.argmax(output[:, -1, :], dim=-1, keepdim=True)
+            generated_tokens = torch.cat([generated_tokens, next_tokens], dim=1)
 
-                for i in range(beam_width):
-                    new_seq = torch.cat([seq, top_k_indices[:, i].unsqueeze(-1)], dim=1)
-                    new_score = score + top_k_probs[:, i].sum().item()
-                    candidates.append((new_seq, new_score))
+            finished |= (next_tokens.squeeze(1) == self.eoa_token_id)
+            if finished.all():
+                padding = torch.full((batch_size, self.len_answer - output.size(1)), self.pad_token_id, dtype=torch.long, device=self.rank)
+                output = torch.cat([output, padding], dim=1)
+                break
             
-            beams = sorted(candidates, key=lambda x: x[1], reverse=True)[:beam_width]
+        return propabilities.to(self.rank)
 
-        return beams[0][0] 
+    # def _beam_search(self, src, beam_width=3):
+    #     """Performs beam search decoding."""
+    #     batch_size = src.shape[0]
+    #     beams = [(torch.full((batch_size, 1), self.soa_token_id, device=self.rank), 0)]  
+        
+    #     for _ in range(self.len_answer):
+    #         candidates = []
+    #         for seq, score in beams:
+    #             logits = self.model(src, seq, has_mask=True)[:, -1, :] 
+    #             probs = F.log_softmax(logits, dim=-1)
+    #             top_k_probs, top_k_indices = probs.topk(beam_width, dim=-1) 
+
+    #             for i in range(beam_width):
+    #                 new_seq = torch.cat([seq, top_k_indices[:, i].unsqueeze(-1)], dim=1)
+    #                 new_score = score + top_k_probs[:, i].sum().item()
+    #                 candidates.append((new_seq, new_score))
+            
+    #         beams = sorted(candidates, key=lambda x: x[1], reverse=True)[:beam_width]
+
+        # return beams[0][0] 
+    
+    def evaluate(self, tgt, pred):
+        self.model.eval()
+        with torch.no_grad():
+            loss = self.criterion(pred.view(-1, pred.size(-1)), tgt.view(-1))
+        return loss.item()
     
     def save_model(self):
         print(f"Try to save model at {self.path}")
@@ -245,8 +275,7 @@ class ParallelTrainer:
                 'optimizer_state_dict': opt_cpu_state, #self.optimizer.state_dict(),
                 # 'loss': self.criterion
             }, self.path)
-
-
+    
     def infer(self, seq, tokenizer=None, testing=False):
         self.model.eval() 
         device = seq.device

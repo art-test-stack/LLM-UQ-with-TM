@@ -58,7 +58,11 @@ def print_fsdp_wrapping(module, prefix=""):
 def fsdp_main(rank, world_size, args):
     print("rank", rank)
     setup(rank, world_size)
-    tokenizer = Tokenizer()
+
+    try:
+        tokenizer = Tokenizer(model_name=args.tokenizer)
+    except:
+        tokenizer = Tokenizer()
 
     train, test, val = get_data(tokenizer)
     
