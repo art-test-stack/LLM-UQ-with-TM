@@ -154,6 +154,7 @@ class ParallelTrainer:
                 assert not torch.isnan(tgt).any(), "NaN found in targets!"
                 src, tgt = src.to(self.rank), tgt.to(self.rank)
 
+
                 batch_size = tgt.shape[0]
                 seq_len = self.len_answer
 
@@ -169,12 +170,15 @@ class ParallelTrainer:
 
                     next_token = logits.argmax(dim=-1, keepdim=True)
                     output = torch.cat([output, next_token], dim=1)
+                    next_token = logits.argmax(dim=-1, keepdim=True)
+                    output = torch.cat([output, next_token], dim=1)
 
                     finished |= (next_token.squeeze(1) == self.eoa_token_id)
                     if finished.all():
                         padding = torch.full((batch_size, seq_len - output.size(1)), self.pad_token_id, dtype=torch.long, device=self.rank)
                         output = torch.cat([output, padding], dim=1)
                         break
+            
 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)        
         test_loss = ddp_loss[0] / ddp_loss[1]
@@ -258,6 +262,7 @@ class ParallelTrainer:
         self.model.load_state_dict(checkpoint['model_state_dict'])
         # self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         # self.criterion.load_state_dict(checkpoint['loss'])
+        print("Model saved!")
         return self.model
     
     def save_modelcheckpoint(self):
@@ -275,7 +280,9 @@ class ParallelTrainer:
                 'optimizer_state_dict': opt_cpu_state, #self.optimizer.state_dict(),
                 # 'loss': self.criterion
             }, self.path)
-    
+        print("Model checkpoint saved!")
+
+
     def infer(self, seq, tokenizer=None, testing=False):
         self.model.eval() 
         device = seq.device
