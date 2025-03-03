@@ -1,7 +1,7 @@
 from archives.main_llm import main_train
 
 from llm.data.dataset import get_data
-from llm.data.tokenizer import Tokenizer, CONTROL_TOKENS
+from llm.data.tokenizer import Tokenizer, CONTROL_TOKENS, CONTROL_TOKENS_LIST
 
 from llm.model import LLM
 from llm.parallel_trainer import ParallelTrainer
@@ -64,6 +64,8 @@ def fsdp_main(rank, world_size, args):
     except:
         tokenizer = Tokenizer()
 
+    tokenizer.add_special_tokens(CONTROL_TOKENS_LIST)
+
     train, test, val = get_data(tokenizer)
     
     sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=True)
@@ -121,7 +123,18 @@ def fsdp_main(rank, world_size, args):
         print("FSDP model:", model)
     
     opt = optim.AdamW(model.parameters(), lr=args.lr / args.batch_size)
-    criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.special_tokens[CONTROL_TOKENS.padding],reduction="sum")
+
+    loss_mask = torch.ones(vocab_size)
+
+    for index in [tokenizer.soa_token_id, tokenizer.eoa_token_id, tokenizer.pad_token_id]:
+        loss_mask[index] = 0
+
+    loss_mask = loss_mask.float().to(rank)
+    criterion = nn.CrossEntropyLoss(
+        weight=loss_mask, 
+        # ignore_index=tokenizer.special_tokens[CONTROL_TOKENS.padding],
+        reduction="sum"
+    )
     # scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
     # init_start_event.record()
     
@@ -142,10 +155,10 @@ def fsdp_main(rank, world_size, args):
         csv_object=csv_object,
         rank=rank,
         world_size=world_size,
-        name="make-tm-dataset.80g.",
-        soa_token_id=tokenizer.special_tokens[CONTROL_TOKENS.start_of_answer],
-        eoa_token_id=tokenizer.special_tokens[CONTROL_TOKENS.end_of_answer],
-        pad_token_id=tokenizer.special_tokens[CONTROL_TOKENS.padding],
+        name="make-tm-dataset.2",
+        soa_token_id=tokenizer.soa_token_id,
+        eoa_token_id=tokenizer.eoa_token_id,
+        pad_token_id=tokenizer.pad_token_id,
         len_answer=val.max_a_len
     )
     # Model checkpoint saving, by saving to the rank0 CPU

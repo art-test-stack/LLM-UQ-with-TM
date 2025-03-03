@@ -138,7 +138,6 @@ class ParallelTrainer:
             ddp_loss[0] += loss.item()
             ddp_loss[1] += src.size(0) * src.size(1)
             
-            
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         test_loss = ddp_loss[0] / ddp_loss[1]
         return float(test_loss.cpu().numpy())
@@ -159,7 +158,7 @@ class ParallelTrainer:
                 seq_len = self.len_answer
 
                 output = torch.full((batch_size, 1), self.soa_token_id, dtype=torch.long, device=self.rank)
-
+                finished = torch.zeros(batch_size, dtype=torch.bool, device=self.rank)
                 for i in range(seq_len - 1):
                     logits = self.model(src, output, has_mask=False)
                     logits = logits[:, -1, :] 

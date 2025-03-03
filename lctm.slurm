@@ -11,13 +11,15 @@ echo "We are using $SLURM_CPUS_ON_NODE cores"
 echo "We are using $SLURM_CPUS_ON_NODE cores per node"
 echo "Total of $SLURM_NTASKS cores"
 module avail Python
-module load Python/3.11.3-GCCcore-12.3.0
+# module load Python/3.11.3-GCCcore-12.3.0
+module load TensorFlow/2.11.0-foss-2022a-CUDA-11.7.0
 source ${ENV_DIR}
-source ${PIP_DIR}
+# source ${PIP_DIR}
 # Uncomment the following lines to install requirements
+
 # pip install --upgrade pip 
-# pip install -r requirements.txt
-python -c "import torch; print(torch.__version__, torch.version.cuda)"
+pip install -r requirements.txt
+# python -c "import torch; print(torch.__version__, torch.version.cuda)"
 
 nvidia-smi
 pwd
@@ -30,7 +32,7 @@ pwd
 # pip3 install pycuda
 
 # # pip install nvidia-pyindex
-pip install pycuda
+# pip install pycuda
 # cd pycuda_2025.1
 # su -c "python distribute_setup.py"
 # su -c "easy_install numpy"
@@ -40,14 +42,14 @@ pip install pycuda
 # su -c "make install"
 # # # pwd
 # # cd ..
-# cd labelcritic_tm/
-# pip install .
-# python examples/synthetic_lctm.py
+cd labelcritic_tm/
+pip install .
+python examples/synthetic_lctm.py
 # # cd ../
 # # pip install nvidia-pyindex
 # # pip install nvidia-cuda-nvcc
 # # pip install git+https://github.com/cair/tmu.git
 # # pip install pycuda
-# # cd examples/
-# # python synthetic_lctm.py
+# cd examples/
+# python synthetic_lctm.py
 # # python lctm_eg.py

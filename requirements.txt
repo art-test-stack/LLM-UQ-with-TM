@@ -7,6 +7,7 @@ scipy
 tiktoken
 torch
 torchtext
+transformers
 torchmetrics
 tqdm
 llama-stack
