@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from typing import List, Union
+from typing import Dict, List, Union
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,6 +50,8 @@ class GradStats:
 class InputData(GradStats):
     test_loss: float | None = None
     var_test_loss: float | None = None
+    train_loss: float | None = None
+    var_train_loss: float | None = None
     epoch: int | None = None
     batch_size: int | None = None
 
@@ -67,22 +69,30 @@ class InputCSV:
         self.world_size = world_size
         self.last_layers = None
 
-    def init_data(self, last_test_loss: Union[float, None] = None) -> None:
+    def init_data(self, last_values: Union[Dict[str,float], None] = None) -> None:
         self.current = InputData()
         self.clean_grads()
-        self.last_test_loss = last_test_loss
+        self.last_test_loss = last_values["test_loss"]
+        self.last_train_loss = last_values["train_loss"]
 
-    def __call__(self, test_loss: float) -> None:
+    def __call__(self, losses) -> None:
         assert self.current.batch_size, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
         assert self.current.epoch or self.current.epoch == 0, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
 
-        self.current.test_loss = test_loss
-        self.current.var_test_loss = test_loss - self.last_test_loss if self.last_test_loss else test_loss
+        self.current.test_loss = losses["test"]
+        self.current.var_test_loss = losses["test"] - self.last_test_loss if self.last_test_loss else losses["test"]
+        self.current.train_loss = losses["train"]
+        self.current.var_train_loss = losses["train"] - self.last_train_loss if self.last_train_loss else losses["train"]
+
+        last_values = {
+            "test_loss": losses["test"],
+            "train_loss": losses["train"]
+        }
         self.compute_grad_stats()
         # add a way to store loss variations
         self.compute_model_stats()
         self.update_csv()
-        self.init_data(last_test_loss=test_loss)
+        self.init_data(last_values)
     
     def update_hyperparameters(self, epoch: int, batch_size: int) -> None:
         #TODO fine a new name
@@ -140,6 +150,7 @@ class InputCSV:
         self.current = InputData(
             **{fn: getattr(grad_stats, fn) for fn in grad_stats.__dataclass_fields__.keys()},
             test_loss=self.current.test_loss, var_test_loss=self.current.var_test_loss, 
+            train_loss=self.current.train_loss, var_train_loss=self.current.var_train_loss,
             epoch=self.current.epoch, batch_size=self.current.batch_size
         )
 

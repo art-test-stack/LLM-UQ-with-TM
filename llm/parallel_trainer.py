@@ -89,8 +89,13 @@ class ParallelTrainer:
                     train_kwargs["sampler"].set_epoch(epoch)
                 train_loss = self._train_epoch(train_loader)
                 val_loss = self._val_epoch(val_loader)
+
                 if self.rank == 0:
-                    self.csv_object(val_loss)
+                    losses = {
+                        "train": train_loss,
+                        "test": val_loss
+                    }
+                    self.csv_object(losses)
 
                 history["train_loss"].append(train_loss)
                 history["test_loss"].append(val_loss)

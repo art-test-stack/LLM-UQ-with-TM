@@ -34,36 +34,60 @@ class Tokenizer:
     def __init__(
             self,
             model_name: str = "gpt-4o",
-            pad_token_id: str = CONTROL_TOKENS.padding,
-            soa_token_id: str = CONTROL_TOKENS.start_of_answer,
-            eoa_token_id: str = CONTROL_TOKENS.end_of_answer,
+            pad_token: str = CONTROL_TOKENS.padding,
+            soa_token: str = CONTROL_TOKENS.start_of_answer,
+            eoa_token: str = CONTROL_TOKENS.end_of_answer,
         ) -> None:
         assert model_name in tiktoken_models, f"'{model_name}' is not a provided model"
         self.model = tiktoken.encoding_for_model(model_name)
         self.pat_str = self.model._pat_str
         self.mergeable_ranks = self.model._mergeable_ranks
-
+        self.model._special_tokens = {}
+        self.model._core_bpe = _tiktoken.CoreBPE(self.mergeable_ranks, self.model._special_tokens, self.pat_str)
         self.special_tokens = self.model._special_tokens
+        self._compute_vocab_size()
+        
+        # LINE BELLOW VERY IMPORTANT FOR TIKTOKEN INIT BUT DO NOT KNOW WHY
+        # IF NOT USED, THE SPECIAL TOKENS ARE NOT ADDED
+        self.pad_token_id = 0 
 
-        self.add_special_tokens([pad_token_id, soa_token_id, eoa_token_id])
-        self.pad_token_id = self.special_tokens[pad_token_id]
-        self.soa_token_id = self.special_tokens[soa_token_id]
-        self.eoa_token_id = self.special_tokens[eoa_token_id]
+        self.add_special_tokens([pad_token, soa_token, eoa_token])
+        self.pad_token_id = self.special_tokens[pad_token]
+        self.soa_token_id = self.special_tokens[soa_token]
+        self.eoa_token_id = self.special_tokens[eoa_token]
+
+        self._compute_vocab_size()
+
 
     def get_vocab_size(self) -> int:
-        return self.model.n_vocab + len(self.special_tokens)
+        return self.vocab_size
+    
+    def _compute_vocab_size(self) -> int:
+        self.vocab_size = self.model.n_vocab - len(self._get_missing_idx())
 
     def add_special_tokens(self, special_tokens: Union[List[str],str]) -> None:
-        token_ids = range(self.model.n_vocab, self.model.n_vocab + len(special_tokens))
-
         special_tokens = special_tokens if isinstance(special_tokens, list) else list(special_tokens)
-        self.model._special_tokens = {
+        special_tokens = [str(special_token) for special_token in special_tokens if special_token not in self.model._special_tokens] 
+        missing_token_idx = self._get_missing_idx()
+        token_ids = missing_token_idx[:len(special_tokens)] if len(missing_token_idx) >= len(special_tokens) else missing_token_idx + list(range(self.model.n_vocab, self.model.n_vocab + len(special_tokens) - len(missing_token_idx)))
+
+        self.model._special_tokens |= {
             token: id
             for token, id in zip(special_tokens, token_ids)
         }
         self.model._core_bpe = _tiktoken.CoreBPE(self.mergeable_ranks, self.model._special_tokens, self.pat_str)
         self.special_tokens = self.model._special_tokens
-        
+        self._compute_vocab_size()
+    
+    def _get_missing_idx(self) -> List[int]:
+        missing_token_idx = []
+        for idx in range(self.model.n_vocab):
+            try:
+                self.decode([idx])
+            except:
+                missing_token_idx.append(idx)
+        return missing_token_idx
+    
     def __call__(
             self, 
             text: str, 
