@@ -54,7 +54,7 @@ class EvalTask:
         for key, value in res.items():
             if isinstance(value, list):
                 for k in range(len(value)):
-                    results[f"{key}_{k}"] = value[k]
+                    results[f"{key}_{k}"] = float(value[k])
                 del results[key]
             
         return results
