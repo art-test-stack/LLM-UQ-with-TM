@@ -28,6 +28,8 @@ from typing import Callable, Dict, Union
 from tqdm import tqdm
 from pathlib import Path
 
+import pickle
+
 class ParallelTrainer:
     def __init__(
             self,
@@ -52,6 +54,7 @@ class ParallelTrainer:
         self.world_size = world_size
         self.name = name
         self.path = Path(f"{model_dir}/{self.name}.pt")
+        self.best_path = Path(f"{model_dir}/best_{self.name}.pt")
         assert not soa_token_id == eoa_token_id, "Start of answer and end of answer tokens should be different"
         self.soa_token_id = soa_token_id
         self.eoa_token_id = eoa_token_id
@@ -105,9 +108,9 @@ class ParallelTrainer:
                 early_stopping(val_loss)
                 if self.rank == 0 and early_stopping.save_model:
                     if self.world_size > 1:
-                        self.save_modelcheckpoint()
+                        self.save_modelcheckpoint(self.best_path)
                     else:
-                        self.save_model()
+                        self.save_model(self.best_path)
                 torch.cuda.empty_cache()
                 if early_stopping.early_stop:
                     print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}") if self.rank == 0 else None
@@ -117,8 +120,16 @@ class ParallelTrainer:
                 loss = history["train_loss"][-1],
                 test_loss = history["test_loss"][-1],
             )
-        if self.rank == 0:
+        # if self.rank == 0:
+        #     self.save_model()
+       
+        if self.world_size > 1:
+            self.save_modelcheckpoint()
+        else:
             self.save_model()
+            
+        with open(Path(f"models/{self.name}.pickle"), 'wb') as handle:
+            pickle.dump(history, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _train_epoch(self, train_set, accumulation_steps: int = 1) -> float:
         # return 0
@@ -248,13 +259,14 @@ class ParallelTrainer:
             loss = self.criterion(pred.view(-1, pred.size(-1)), tgt.view(-1))
         return loss.item()
     
-    def save_model(self):
-        print(f"Try to save model at {self.path}")
+    def save_model(self, path: Union[Path,str] = None):
+        path = path or self.path
+        print(f"Try to save model at {path}")
         torch.save({
             'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
+            # 'optimizer_state_dict': self.optimizer.state_dict(),
             # 'loss': self.criterion
-        }, self.path)
+        }, path)
         # self.save_grads()
     
     def load_model(self):
@@ -269,21 +281,22 @@ class ParallelTrainer:
         print("Model saved!")
         return self.model
     
-    def save_modelcheckpoint(self):
-        print(f"Try to save model checkpoint at {self.path}")
+    def save_modelcheckpoint(self, path: Union[Path,str] = None):
+        path = path or self.path
+        print(f"Try to save model checkpoint at {path}")
         save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
         with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, save_policy):
             model_cpu_state = self.model.state_dict()
-            opt_cpu_state = self.optimizer.state_dict()
+            # opt_cpu_state = self.optimizer.state_dict()
             # loss_cpu_state = self.criterion
 
         if self.rank == 0:
         # save_name = file_save_name + "-" + time_of_run + "-" + currEpoch
             torch.save({
                 'model_state_dict': model_cpu_state, #self.model.state_dict(),
-                'optimizer_state_dict': opt_cpu_state, #self.optimizer.state_dict(),
+                # 'optimizer_state_dict': opt_cpu_state, #self.optimizer.state_dict(),
                 # 'loss': self.criterion
-            }, self.path)
+            }, path)
         print("Model checkpoint saved!")
 
 
