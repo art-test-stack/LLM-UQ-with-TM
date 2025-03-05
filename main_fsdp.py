@@ -104,15 +104,18 @@ def fsdp_main(rank, world_size, args):
         "num_decoder_layers": 4
     }
     model = LLM(**model_hyperparams).to(rank)
+
     if args.verbose:
         model.summary()
+
     for name, param in model.named_parameters():
         if torch.isnan(param).any() or torch.isinf(param).any():
             print(f"NaN/Inf detected in parameter {name}")
+            
     model_mem_required = model.memory_storage()
     model = FSDP(model,
-        # auto_wrap_policy=my_auto_wrap_policy,
         use_orig_params=world_size > 1,
+        # auto_wrap_policy=my_auto_wrap_policy,
         # cpu_offload=CPUOffload(offload_params=True)
     )
     # model.embedding = FSDP(model.embedding, use_orig_params=True) 
@@ -123,6 +126,7 @@ def fsdp_main(rank, world_size, args):
         print("FSDP model:", model)
     
     opt = optim.AdamW(model.parameters(), lr=args.lr / args.batch_size)
+    lr_scheduler = StepLR(opt, step_size=80, gamma=args.gamma)
 
     loss_mask = torch.ones(vocab_size)
 
@@ -147,11 +151,13 @@ def fsdp_main(rank, world_size, args):
             Current rank: {rank}.
             Free memory: {free_memory:,} bytes.
             Memory required for the model: {model_mem_required:,} bytes"""
+        
     csv_object = InputCSV(model, csv_path)
     trainer = ParallelTrainer(
         model,
         optimizer=opt,
         criterion=criterion,
+        lr_scheduler=lr_scheduler,
         csv_object=csv_object,
         rank=rank,
         world_size=world_size,
