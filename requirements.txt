@@ -6,9 +6,12 @@ scikit_learn
 scipy
 tiktoken
 torch
-torchtext
-transformers
+# torchtext
 torchmetrics
+datasets
+transformers
+evaluate
+rouge_score
 tqdm
 llama-stack
 pytorch-lightning

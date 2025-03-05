@@ -36,12 +36,13 @@ class ParallelTrainer:
             model: Union[Callable,FSDP,nn.Module],
             optimizer: optim.Optimizer,
             criterion: nn.Module,
-            lr_scheduler: optim.lr_scheduler,
             csv_object: InputCSV,
             rank: torch.device,
             world_size: int,
+            eval_task: Callable = None,
             name: str = "model",
             model_dir: str = "models/",
+            lr_scheduler: optim.lr_scheduler = None,
             soa_token_id: int = 0,
             eoa_token_id: int = 0,
             pad_token_id: int = 0,
@@ -49,7 +50,7 @@ class ParallelTrainer:
         ) -> None:
         self.model = model
         self.optimizer = optimizer
-        self.lr_scheduler = lr_scheduler
+        self.lr_scheduler = lr_scheduler or torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
         self.criterion = criterion
         self.csv_object = csv_object
         self.rank = rank
@@ -63,9 +64,7 @@ class ParallelTrainer:
         self.pad_token_id = pad_token_id
         self.len_answer = len_answer
         self.verbose = True
-        self.metrics = {
-
-        }
+        self.eval_task = eval_task
 
     def fit(
             self, 
@@ -77,9 +76,8 @@ class ParallelTrainer:
             min_delta: float = 0.05,
             verbose: bool = True,
             train_kwargs: Dict = {},
-            val_kwargs: Dict = {}
+            val_kwargs: Dict = {},
         ) -> None:
-
         history = {"train_loss": [], "test_loss": []}
         train_loader = DataLoader(train_set, **train_kwargs)
         val_loader = DataLoader(val_set, **val_kwargs)
@@ -101,7 +99,7 @@ class ParallelTrainer:
                         "train": train_loss,
                         "test": val_loss
                     }
-                    self.csv_object(losses)
+                    self.csv_object(losses, self.eval_task.compute())
 
                 history["train_loss"].append(train_loss)
                 history["test_loss"].append(val_loss)
@@ -196,7 +194,7 @@ class ParallelTrainer:
                         padding = torch.full((batch_size, seq_len - output.size(1)), self.pad_token_id, dtype=torch.long, device=self.rank)
                         output = torch.cat([output, padding], dim=1)
                         break
-            
+                self.eval_task.update(refs=tgt, preds=output)
 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)        
         test_loss = ddp_loss[0] / ddp_loss[1]

@@ -5,6 +5,7 @@ from llm.data.tokenizer import Tokenizer, CONTROL_TOKENS, CONTROL_TOKENS_LIST
 
 from llm.model import LLM
 from llm.parallel_trainer import ParallelTrainer
+from llm.eval import EvalTask
 
 from tm_data.preprocessing import InputCSV
 
@@ -151,8 +152,14 @@ def fsdp_main(rank, world_size, args):
             Current rank: {rank}.
             Free memory: {free_memory:,} bytes.
             Memory required for the model: {model_mem_required:,} bytes"""
-        
-    csv_object = InputCSV(model, csv_path)
+    
+    eval_task = EvalTask(tokenizer=tokenizer)
+    csv_object = InputCSV(
+        model=model, 
+        path=csv_path,
+        world_size=world_size,
+        eval_metrics=eval_task.result_keys
+    )
     trainer = ParallelTrainer(
         model,
         optimizer=opt,
@@ -184,7 +191,8 @@ def fsdp_main(rank, world_size, args):
             patience=args.patience,
             min_delta=args.min_delta,
             train_kwargs=train_kwargs,
-            val_kwargs=test_kwargs
+            val_kwargs=test_kwargs,
+            eval_task=eval_task
         )
 
     if rank == 0:

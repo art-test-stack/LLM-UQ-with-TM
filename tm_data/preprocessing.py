@@ -57,7 +57,13 @@ class InputData(GradStats):
 
 
 class InputCSV:
-    def __init__(self, model: nn.Module, path: Union[Path, str], world_size: int = 0):
+    def __init__(
+            self, 
+            model: nn.Module, 
+            path: Union[Path, str], 
+            world_size: int = 0,
+            eval_metrics: List[str] = None
+        ) -> None:
         if type(path) == str:
             self.path = Path(path)
         if not self.path.suffix == '.csv':
@@ -68,14 +74,17 @@ class InputCSV:
         self.init_data()
         self.world_size = world_size
         self.last_layers = None
+        self.eval_metrics = eval_metrics
 
     def init_data(self, last_values: Union[Dict[str,float], None] = None) -> None:
         self.current = InputData()
         self.clean_grads()
         self.last_test_loss = last_values["test_loss"] if last_values else None
         self.last_train_loss = last_values["train_loss"] if last_values else None
+        for metric in self.eval_metrics:
+            setattr(self.current, metric, None)
 
-    def __call__(self, losses) -> None:
+    def __call__(self, losses, metrics) -> None:
         assert self.current.batch_size, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
         assert self.current.epoch or self.current.epoch == 0, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
 
@@ -83,7 +92,10 @@ class InputCSV:
         self.current.var_test_loss = losses["test"] - self.last_test_loss if self.last_test_loss else losses["test"]
         self.current.train_loss = losses["train"]
         self.current.var_train_loss = losses["train"] - self.last_train_loss if self.last_train_loss else losses["train"]
-
+        for metric in self.eval_metrics:
+            setattr(self.current, metric
+                , metrics[metric]
+            )
         last_values = {
             "test_loss": losses["test"],
             "train_loss": losses["train"]
