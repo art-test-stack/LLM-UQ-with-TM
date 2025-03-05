@@ -71,10 +71,10 @@ class InputCSV:
         if not self.path.exists():
             create_csv(self.path)
         self.model = model
+        self.eval_metrics = eval_metrics
         self.init_data()
         self.world_size = world_size
         self.last_layers = None
-        self.eval_metrics = eval_metrics
 
     def init_data(self, last_values: Union[Dict[str,float], None] = None) -> None:
         self.current = InputData()

@@ -6,6 +6,7 @@ scikit_learn
 scipy
 tiktoken
 torch
+torchvision
 # torchtext
 torchmetrics
 datasets

@@ -168,7 +168,8 @@ def fsdp_main(rank, world_size, args):
         csv_object=csv_object,
         rank=rank,
         world_size=world_size,
-        name="make-tm-dataset.2",
+        eval_task=eval_task,
+        name="make-tm-dataset.test",
         soa_token_id=tokenizer.soa_token_id,
         eoa_token_id=tokenizer.eoa_token_id,
         pad_token_id=tokenizer.pad_token_id,
@@ -192,7 +193,6 @@ def fsdp_main(rank, world_size, args):
             min_delta=args.min_delta,
             train_kwargs=train_kwargs,
             val_kwargs=test_kwargs,
-            eval_task=eval_task
         )
 
     if rank == 0:
