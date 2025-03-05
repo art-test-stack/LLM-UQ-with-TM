@@ -6,7 +6,7 @@ import torch
 from torch import nn
 
 from typing import Dict, List, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, make_dataclass, field
 from pathlib import Path
 
 @dataclass
@@ -77,12 +77,15 @@ class InputCSV:
         self.last_layers = None
 
     def init_data(self, last_values: Union[Dict[str,float], None] = None) -> None:
-        self.current = InputData()
         self.clean_grads()
         self.last_test_loss = last_values["test_loss"] if last_values else None
         self.last_train_loss = last_values["train_loss"] if last_values else None
-        for metric in self.eval_metrics:
-            setattr(self.current, metric, None)
+        CurrentInput = make_dataclass(
+            "CurrentInput",
+            fields=[(f.name, f.type, field(default=None)) for f in fields(InputData)] +
+                [(name, float, field(default=None)) for name in self.eval_metrics]
+        )
+        self.current = CurrentInput()
 
     def __call__(self, losses, metrics) -> None:
         assert self.current.batch_size, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."

@@ -1,6 +1,6 @@
 import evaluate
 
-from typing import List
+from typing import Callable, List
 
 
 possible_metrics = [
@@ -14,7 +14,7 @@ possible_metrics = [
 ]
 
 class EvalTask:
-    def __init__(self, metrics: List[str] = None, tokenizer = None):
+    def __init__(self, tokenizer: Callable = None, metrics: List[str] = None):
         assert tokenizer, "Tokenizer is required"
         self.tokenizer = tokenizer
         self.best = None
