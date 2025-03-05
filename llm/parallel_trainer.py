@@ -36,6 +36,7 @@ class ParallelTrainer:
             model: Union[Callable,FSDP,nn.Module],
             optimizer: optim.Optimizer,
             criterion: nn.Module,
+            lr_scheduler: optim.lr_scheduler,
             csv_object: InputCSV,
             rank: torch.device,
             world_size: int,
@@ -48,6 +49,7 @@ class ParallelTrainer:
         ) -> None:
         self.model = model
         self.optimizer = optimizer
+        self.lr_scheduler = lr_scheduler
         self.criterion = criterion
         self.csv_object = csv_object
         self.rank = rank
@@ -92,7 +94,8 @@ class ParallelTrainer:
                     train_kwargs["sampler"].set_epoch(epoch)
                 train_loss = self._train_epoch(train_loader)
                 val_loss = self._val_epoch(val_loader)
-
+                self.lr_scheduler.step()
+                
                 if self.rank == 0:
                     losses = {
                         "train": train_loss,
