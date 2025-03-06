@@ -92,15 +92,28 @@ def causal_mask(seq_len):
 def padding_mask(seq, pad_token_id):
     return (seq == pad_token_id).unsqueeze(1) # .unsqueeze(2)
   
-def get_data(tokenizer: Tokenizer) -> Tuple[FinQADataset, FinQADataset, FinQADataset]:
+def get_data(
+        tokenizer: Tokenizer,
+        max_length: int = 1024,
+        max_q_length: Union[int, None] = None,
+        max_a_length: Union[int, None] = None,
+        short_answer: bool = True
+    ) -> Tuple[FinQADataset, FinQADataset, FinQADataset]:
     dataset = datasets.load_dataset("ibm-research/finqa", "en")
 
     train = dataset["train"]
     test = dataset["test"]
     val = dataset["validation"]
 
-    train = FinQADataset(train, tokenizer)
-    test = FinQADataset(test, tokenizer)
-    val = FinQADataset(val, tokenizer)
+    params = {
+        "tokenizer": tokenizer,
+        "max_length": max_length,
+        "max_q_length": max_q_length,
+        "max_a_length": max_a_length,
+        "short_answer": short_answer
+    }
+    train = FinQADataset(train, **params)
+    test = FinQADataset(test, **params)
+    val = FinQADataset(val, **params)
     
     return train, test, val

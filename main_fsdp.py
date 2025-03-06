@@ -67,7 +67,19 @@ def fsdp_main(rank, world_size, args):
 
     tokenizer.add_special_tokens(CONTROL_TOKENS_LIST)
 
-    train, test, val = get_data(tokenizer)
+    # TODO: add to settings
+    max_length = 1024
+    max_q_length = 1024
+    max_a_length = 8
+    short_answer = True
+    dataset_params = {
+        "tokenizer": tokenizer,
+        "max_length": max_length,
+        "max_q_length": max_q_length,
+        "max_a_length": max_a_length,
+        "short_answer": short_answer
+    }
+    train, test, val = get_data(**dataset_params)
     
     sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=True)
     sampler2 = DistributedSampler(val, rank=rank, num_replicas=world_size, shuffle=True)
@@ -93,7 +105,6 @@ def fsdp_main(rank, world_size, args):
     csv_path = "dataset/uq_features"
     
     vocab_size = tokenizer.get_vocab_size()
-    print("vocab_size:", vocab_size)
     max_content = max(train.max_q_len, val.max_a_len)
 
     model_hyperparams = { 
@@ -137,7 +148,7 @@ def fsdp_main(rank, world_size, args):
     loss_mask = loss_mask.float().to(rank)
     criterion = nn.CrossEntropyLoss(
         weight=loss_mask, 
-        # ignore_index=tokenizer.special_tokens[CONTROL_TOKENS.padding],
+        ignore_index=tokenizer.special_tokens[CONTROL_TOKENS.padding],
         reduction="sum"
     )
     # scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
