@@ -63,7 +63,7 @@ def fsdp_main(rank, world_size, args):
     try:
         tokenizer = Tokenizer(model_name=args.tokenizer)
     except:
-        tokenizer = Tokenizer()
+        tokenizer = Tokenizer(model_name="gpt2")
 
     tokenizer.add_special_tokens(CONTROL_TOKENS_LIST)
 
@@ -109,11 +109,11 @@ def fsdp_main(rank, world_size, args):
 
     model_hyperparams = { 
         "vocab_size": vocab_size, 
-        "model_size": 512,
+        "model_size": 1024,
         "max_content": max_content, 
-        "nhead": 8, 
-        "num_encoder_layers": 4, 
-        "num_decoder_layers": 4
+        "nhead": 16, 
+        "num_encoder_layers": 6, 
+        "num_decoder_layers": 6
     }
     model = LLM(**model_hyperparams).to(rank)
 
@@ -180,7 +180,7 @@ def fsdp_main(rank, world_size, args):
         rank=rank,
         world_size=world_size,
         eval_task=eval_task,
-        name="make-tm-dataset.test",
+        name="big.make-tm-dataset.test2",
         soa_token_id=tokenizer.soa_token_id,
         eoa_token_id=tokenizer.eoa_token_id,
         pad_token_id=tokenizer.pad_token_id,

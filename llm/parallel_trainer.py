@@ -57,7 +57,7 @@ class ParallelTrainer:
         self.world_size = world_size
         self.name = name
         self.path = Path(f"{model_dir}/{self.name}.pt")
-        self.best_path = Path(f"{model_dir}/best_{self.name}.pt")
+        self.best_path = Path(f"{model_dir}/{self.name}.best.pt")
         assert not soa_token_id == eoa_token_id, "Start of answer and end of answer tokens should be different"
         self.soa_token_id = soa_token_id
         self.eoa_token_id = eoa_token_id
