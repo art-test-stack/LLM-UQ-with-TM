@@ -18,10 +18,8 @@ class FinQADataset(Dataset):
             short_answer: bool = True,
         ) -> None:
         self.data = data
-        self.questions = data["question"]
-        self.answers = data["answer"]
         self.tokenizer = tokenizer
-        self.max_q_len = max_q_length if max_q_length else max_length
+        self.max_q_len = max_q_length - max_a_length if max_q_length else max_length - max_a_length
         self.max_a_len = max_a_length if max_a_length else max_length
         
         # self.pad_token_id = tokenizer.pad_token_id
@@ -70,9 +68,9 @@ class FinQADataset(Dataset):
             table_str = table_str.replace("]]", "]\n]")
             return table_str
 
-        formatted_table = format_table(table)
+        # formatted_table = format_table(table)
 
-        question = f"""{CONTROL_TOKENS.start_of_context}{pre_text.rstrip(' .')}.{CONTROL_TOKENS.end_of_context}{CONTROL_TOKENS.start_of_table}{formatted_table}.{CONTROL_TOKENS.end_of_table}{CONTROL_TOKENS.start_of_description}{post_text.rstrip(' .')}.{CONTROL_TOKENS.end_of_description}{CONTROL_TOKENS.start_of_question}{question.rstrip(' .')}.{CONTROL_TOKENS.end_of_question}"""
+        question = f"""{CONTROL_TOKENS.start_of_context}{pre_text}{CONTROL_TOKENS.end_of_context}{CONTROL_TOKENS.start_of_table}{table}{CONTROL_TOKENS.end_of_table}{CONTROL_TOKENS.start_of_description}{post_text}{CONTROL_TOKENS.end_of_description}{CONTROL_TOKENS.start_of_question}{question}{CONTROL_TOKENS.end_of_question}"""
         answer = f"{CONTROL_TOKENS.start_of_text}{answer}" 
         if not self.short_answer:
             answer += f"{CONTROL_TOKENS.start_of_program}{program}{CONTROL_TOKENS.end_of_program}"
@@ -82,16 +80,15 @@ class FinQADataset(Dataset):
         #     # return question[-self.max_q_len:], answer[-self.max_a_len:]
         #     return question, answer
         # TOKENIZE THEM
-        q_enc = self.tokenizer(question, padding='max_length', 
+        input_ids = self.tokenizer(question, padding='max_length', 
                                max_length=self.max_q_len, return_tensors=True)
         
-        a_enc = self.tokenizer(answer, padding='max_length', 
+        labels = self.tokenizer(answer, padding='max_length', 
                                max_length=self.max_a_len, return_tensors=True)
-        
-        input_ids = q_enc.squeeze(0)
-        labels = a_enc.squeeze(0) 
-
-        seq = torch.cat([input_ids, labels], dim=1)
+        print("input_ids.shape", input_ids.shape)
+        print("labels.shape", labels.shape)
+        seq = torch.cat([input_ids, labels]).squeeze(0) 
+        print("seq.shape", seq.shape)
         return seq 
   
 def get_data(
@@ -99,7 +96,8 @@ def get_data(
         max_length: int = 1024,
         max_q_length: Union[int, None] = None,
         max_a_length: Union[int, None] = None,
-        short_answer: bool = True
+        short_answer: bool = True,
+        **kwargs
     ) -> Tuple[FinQADataset, FinQADataset, FinQADataset]:
     dataset = datasets.load_dataset("ibm-research/finqa", "en")
 

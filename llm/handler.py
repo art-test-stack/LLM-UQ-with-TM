@@ -100,10 +100,12 @@ def llama_handler(params):
                     break
         tokenizer.special_tokens = dict(sorted(tokenizer.special_tokens.items(), key=lambda item: item[1]))
         tokenizer.model._special_tokens = tokenizer.special_tokens
-        tokenizer.pad_token_id = tokenizer.special_tokens[CONTROL_TOKENS.padding]        
+        tokenizer.pad_token_id = tokenizer.special_tokens[CONTROL_TOKENS.padding] 
+        tokenizer.bos_token_id = tokenizer.bos_id
+        tokenizer.eos_token_id = tokenizer.eos_id       
         return tokenizer
-    tokenizer = add_control_tokens(tokenizer, CONTROL_TOKENS_LIST)
     
+    tokenizer = add_control_tokens(tokenizer, CONTROL_TOKENS_LIST)
     return model, tokenizer
 
 

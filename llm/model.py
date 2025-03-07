@@ -119,7 +119,7 @@ class LLM(Module):
 
         decoder_layer = nn.TransformerDecoderLayer(
             d_model=model_size, 
-            dim_ffn=dim_ffn,
+            dim_feedforward=dim_ffn,
             nhead=nhead,
             dropout=dropout,
             batch_first=True

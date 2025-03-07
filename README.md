@@ -154,7 +154,7 @@ You should have Python (3.10) and pip installed on your machine. If you don't ha
     --mem=$MEM \
     --output=$OUTPUT_DIR/$JOB_NAME.$RUN_TYPE.txt \
     --export=ENV_DIR=$ENV_DIR \
-    parallel.slurm 
+    train_llm.slurm 
     ```
 <!-- 
     sbatch --job-name=$TM_JOB_NAME.$TM_RUN_TYPE \

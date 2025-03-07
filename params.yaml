@@ -1,13 +1,13 @@
 model:
   name: "Llama3.2-1B"
-  type: "torch"
+  type: "llama"
   tokenizer: "gpt2"
   config:
     num_layers: 12
     model_size: 512
     dim_ffn: 1024
     max_seq_len: 512
-    nhead: 12
+    nhead: 16
     dropout: 0.1
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"

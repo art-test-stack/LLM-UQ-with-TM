@@ -63,21 +63,23 @@ def train_llm_pipeline(rank, world_size, args):
 
     model_params = params["model"]
     training_params = params["training"]
+    data_params = params["data"]
 
     model, tokenizer = model_handler(model_params)
+    print("tokenizer.get_vocab_size", tokenizer.get_vocab_size())
 
     # TODO: add to settings
     dataset_params = {
         "tokenizer": tokenizer,
-        "max_length": model_params["max_seq_len"],
-        "max_q_length": model_params["max_seq_len"], # TODO: TEMPORARY
+        "max_length": model_params["config"]["max_seq_len"],
+        "max_q_length": model_params["config"]["max_seq_len"], # TODO: TEMPORARY
         "max_a_length": 8, # TODO: TEMPORARY
-        **dataset_params
+        **data_params
     }
     train, test, val = get_data(**dataset_params)
     
-    sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=True)
-    sampler2 = DistributedSampler(val, rank=rank, num_replicas=world_size, shuffle=True)
+    sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=False)
+    sampler2 = DistributedSampler(val, rank=rank, num_replicas=world_size, shuffle=False)
     sampler3 = DistributedSampler(test, rank=rank, num_replicas=world_size)
 
     train_kwargs = { 'batch_size': training_params["batch_size"], 'sampler': sampler1 }
@@ -85,6 +87,7 @@ def train_llm_pipeline(rank, world_size, args):
     cuda_kwargs = {
         'num_workers': 2,
         'pin_memory': True,
+        "generator": torch.Generator(device="cuda")
         # 'shuffle': True
     }
     
@@ -127,7 +130,7 @@ def train_llm_pipeline(rank, world_size, args):
     )
     # model.embedding = FSDP(model.embedding, use_orig_params=True) 
 
-    lr = training_params["learning_rate"] / training_params["batch_size"]
+    lr = float(training_params["learning_rate"]) / training_params["batch_size"]
     optim_params = {
         "lr": lr,
         "weight_decay": training_params["weight_decay"],
@@ -168,7 +171,7 @@ def train_llm_pipeline(rank, world_size, args):
     
     eval_task = EvalTask(tokenizer=tokenizer)
 
-    csv_path = dataset_params["csv_path"] + f".{params["model"]["name"]}"
+    csv_path = data_params["uq_path"] + f".{params['model']['name']}"
     csv_object = InputCSV(
         model=model, 
         path=csv_path,

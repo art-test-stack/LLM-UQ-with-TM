@@ -5,7 +5,7 @@ import torch
 import torch.multiprocessing as mp
 
 import argparse
-
+from dotenv import load_dotenv
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(
@@ -34,7 +34,7 @@ if __name__=="__main__":
     torch.manual_seed(args.seed)
     WORLD_SIZE = torch.cuda.device_count()
     print(f"WORLD_SIZE: {WORLD_SIZE}")
-
+    load_dotenv()
     if WORLD_SIZE == 0:
         print("No GPU available")
         main_train(args)

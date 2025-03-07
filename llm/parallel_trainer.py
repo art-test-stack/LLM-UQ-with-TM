@@ -46,7 +46,8 @@ class ParallelTrainer:
             bos_token_id: int = 0,
             eos_token_id: int = 0,
             pad_token_id: int = 0,
-            len_answer: int = 0
+            len_answer: int = 0,
+            **kwargs
         ) -> None:
         self.model = model
         self.optimizer = optimizer
@@ -77,6 +78,7 @@ class ParallelTrainer:
             verbose: bool = True,
             train_kwargs: Dict = {},
             val_kwargs: Dict = {},
+            **kwargs
         ) -> None:
         history = {"train_loss": [], "test_loss": []}
         train_loader = DataLoader(train_set, **train_kwargs)
@@ -132,12 +134,12 @@ class ParallelTrainer:
         with open(self.model_dir / "history.pickle", 'wb') as handle:
             pickle.dump(history, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def _train_epoch(self, train_set, accumulation_steps: int = 1) -> float:
+    def _train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
         # return 0
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
 
-        for i, seq in enumerate(train_set):
+        for i, seq in enumerate(train_loader):
             # TODO handle Llama
             assert not torch.isnan(seq).any(), "NaN found in sources!"
             # assert not torch.isnan(tgt).any(), "NaN found in targets!"
@@ -160,12 +162,12 @@ class ParallelTrainer:
         test_loss = ddp_loss[0] / ddp_loss[1]
         return float(test_loss.cpu().numpy())
     
-    def _val_epoch(self, val_set: DataLoader, mode: str ="greedy") -> float:
+    def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)  # [total loss, total tokens]
 
         with torch.no_grad():
-            for seq in val_set:
+            for seq in val_loader:
                 assert not torch.isnan(seq).any(), "NaN found in sources!"
                 seq = seq.to(self.rank)
 

@@ -16,3 +16,5 @@ rouge_score
 tqdm
 llama-stack
 pytorch-lightning
+fairscale
+python-dotenv
