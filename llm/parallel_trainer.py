@@ -43,8 +43,8 @@ class ParallelTrainer:
             name: str = "model",
             model_dir: str = "models/",
             lr_scheduler: optim.lr_scheduler = None,
-            soa_token_id: int = 0,
-            eoa_token_id: int = 0,
+            bos_token_id: int = 0,
+            eos_token_id: int = 0,
             pad_token_id: int = 0,
             len_answer: int = 0
         ) -> None:
@@ -56,11 +56,11 @@ class ParallelTrainer:
         self.rank = rank
         self.world_size = world_size
         self.name = name
-        self.path = Path(f"{model_dir}/{self.name}.pt")
-        self.best_path = Path(f"{model_dir}/{self.name}.best.pt")
-        assert not soa_token_id == eoa_token_id, "Start of answer and end of answer tokens should be different"
-        self.soa_token_id = soa_token_id
-        self.eoa_token_id = eoa_token_id
+        self.model_dir = Path(model_dir).joinpath(self.name)
+        self.model_dir.mkdir(parents=True, exist_ok=True)
+        assert not bos_token_id == eos_token_id, "Start of answer and end of answer tokens should be different"
+        self.bos_token_id = bos_token_id
+        self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
         self.len_answer = len_answer
         self.verbose = True
@@ -88,7 +88,7 @@ class ParallelTrainer:
             for epoch in tepoch:
                 self.csv_object.update_hyperparameters(epoch, batch_size)
 
-                if train_kwargs["sampler"]:
+                if "sampler" in train_kwargs.keys():
                     train_kwargs["sampler"].set_epoch(epoch)
                 train_loss = self._train_epoch(train_loader)
                 val_loss = self._val_epoch(val_loader)
@@ -109,9 +109,9 @@ class ParallelTrainer:
                 early_stopping(val_loss)
                 if self.rank == 0 and early_stopping.save_model:
                     if self.world_size > 1:
-                        self.save_modelcheckpoint(self.best_path)
+                        self.save_modelcheckpoint(best=True)
                     else:
-                        self.save_model(self.best_path)
+                        self.save_model(best=True)
                 torch.cuda.empty_cache()
                 if early_stopping.early_stop:
                     print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}") if self.rank == 0 else None
@@ -129,7 +129,7 @@ class ParallelTrainer:
         else:
             self.save_model()
             
-        with open(Path(f"models/{self.name}.pickle"), 'wb') as handle:
+        with open(self.model_dir / "history.pickle", 'wb') as handle:
             pickle.dump(history, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _train_epoch(self, train_set, accumulation_steps: int = 1) -> float:
@@ -137,23 +137,24 @@ class ParallelTrainer:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
 
-        for i, (src, tgt) in enumerate(train_set):
-            # self.model.zero_grad()
-            assert not torch.isnan(src).any(), "NaN found in sources!"
-            assert not torch.isnan(tgt).any(), "NaN found in targets!"
-            src, tgt = src.to(self.rank), tgt.to(self.rank)
+        for i, seq in enumerate(train_set):
+            # TODO handle Llama
+            assert not torch.isnan(seq).any(), "NaN found in sources!"
+            # assert not torch.isnan(tgt).any(), "NaN found in targets!"
+            seq = seq.to(self.rank) #, tgt.to(self.rank)
             self.optimizer.zero_grad()
-            output = self.model(src, tgt)
-            loss = self.criterion(output.view(-1, output.size(-1)), tgt.view(-1))
+            output = self.model(seq, seq.shape[1] - self.len_answer)[:, -self.len_answer:, :]
+            loss = self.criterion(output.view(-1, output.size(-1)), seq[:, -self.len_answer:, :].view(-1))
             loss.backward()
             if (i + 1) % accumulation_steps == 0:
                 self.optimizer.step()
                 if self.rank == 0 or True:
                     self.csv_object.update_model()
                 self.optimizer.zero_grad()
+                self.model.zero_grad()
             # self.optimizer.step()
             ddp_loss[0] += loss.item()
-            ddp_loss[1] += src.size(0) * src.size(1)
+            ddp_loss[1] += seq.size(0) * seq.size(1)
             
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         test_loss = ddp_loss[0] / ddp_loss[1]
@@ -164,42 +165,38 @@ class ParallelTrainer:
         ddp_loss = torch.zeros(2, device=self.rank)  # [total loss, total tokens]
 
         with torch.no_grad():
-            for src, tgt in val_set:
-            # src, tgt = next(iter(val_set))
-                assert not torch.isnan(src).any(), "NaN found in sources!"
-                assert not torch.isnan(tgt).any(), "NaN found in targets!"
-                src, tgt = src.to(self.rank), tgt.to(self.rank)
+            for seq in val_set:
+                assert not torch.isnan(seq).any(), "NaN found in sources!"
+                seq = seq.to(self.rank)
 
-
-                batch_size = tgt.shape[0]
+                batch_size = seq.shape[0]
                 seq_len = self.len_answer
 
-                output = torch.full((batch_size, 1), self.soa_token_id, dtype=torch.long, device=self.rank)
+                output = torch.full((batch_size, 1), self.bos_token_id, dtype=torch.long, device=self.rank)
                 finished = torch.zeros(batch_size, dtype=torch.bool, device=self.rank)
                 for i in range(seq_len - 1):
-                    logits = self.model(src, output, has_mask=False)
+                    logits = self.model(seq, seq.shape[1] - seq_len)
                     logits = logits[:, -1, :] 
 
-                    loss = self.criterion(logits, tgt[:, i])
+                    loss = self.criterion(logits, seq[:, seq.shape[1] - seq_len + i])
                     ddp_loss[0] += loss.item()
                     ddp_loss[1] += batch_size 
 
                     next_token = logits.argmax(dim=-1, keepdim=True)
                     output = torch.cat([output, next_token], dim=1)
-                    next_token = logits.argmax(dim=-1, keepdim=True)
-                    output = torch.cat([output, next_token], dim=1)
 
-                    finished |= (next_token.squeeze(1) == self.eoa_token_id)
+                    finished |= (next_token.squeeze(1) == self.eos_token_id)
                     if finished.all():
                         padding = torch.full((batch_size, seq_len - output.size(1)), self.pad_token_id, dtype=torch.long, device=self.rank)
                         output = torch.cat([output, padding], dim=1)
                         break
-                self.eval_task.update(refs=tgt, preds=output)
+                self.eval_task.update(refs=seq[:,-seq_len], preds=output)
 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)        
         test_loss = ddp_loss[0] / ddp_loss[1]
         return float(test_loss.cpu().numpy())
     
+    @DeprecationWarning
     def _infer(self, seq, mode: str = "greedy"):
         self.model.eval() 
         device = seq.device
@@ -213,8 +210,9 @@ class ParallelTrainer:
         else:
             return self._greedy(seq, batch_size, device)
 
+    @DeprecationWarning
     def _greedy(self, seq, batch_size, device):
-        generated_tokens = torch.full((batch_size, 1), self.soa_token_id, device=device, dtype=torch.long)
+        generated_tokens = torch.full((batch_size, 1), self.bos_token_id, device=device, dtype=torch.long)
         finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
         propabilities = nn.functional.one_hot(generated_tokens, num_classes=self.model.vocab_size).cpu()
 
@@ -225,7 +223,7 @@ class ParallelTrainer:
             next_tokens = torch.argmax(output[:, -1, :], dim=-1, keepdim=True)
             generated_tokens = torch.cat([generated_tokens, next_tokens], dim=1)
 
-            finished |= (next_tokens.squeeze(1) == self.eoa_token_id)
+            finished |= (next_tokens.squeeze(1) == self.eos_token_id)
             if finished.all():
                 padding = torch.full((batch_size, self.len_answer - output.size(1)), self.pad_token_id, dtype=torch.long, device=self.rank)
                 output = torch.cat([output, padding], dim=1)
@@ -236,7 +234,7 @@ class ParallelTrainer:
     # def _beam_search(self, src, beam_width=3):
     #     """Performs beam search decoding."""
     #     batch_size = src.shape[0]
-    #     beams = [(torch.full((batch_size, 1), self.soa_token_id, device=self.rank), 0)]  
+    #     beams = [(torch.full((batch_size, 1), self.bos_token_id, device=self.rank), 0)]  
         
     #     for _ in range(self.len_answer):
     #         candidates = []
@@ -260,8 +258,9 @@ class ParallelTrainer:
             loss = self.criterion(pred.view(-1, pred.size(-1)), tgt.view(-1))
         return loss.item()
     
-    def save_model(self, path: Union[Path,str] = None):
-        path = path or self.path
+    def save_model(self, best: bool = False):
+        path = "model.pth" if not best else "best_model.pth"
+        path = self.model_dir.joinpath(path)
         print(f"Try to save model at {path}")
         torch.save({
             'model_state_dict': self.model.state_dict(),
@@ -270,7 +269,9 @@ class ParallelTrainer:
         }, path)
         # self.save_grads()
     
-    def load_model(self):
+    def load_model(self, best: bool = False):
+        path = "model.pth" if not best else "best.pth"
+        path = self.model_dir.joinpath(path)
         try:
             checkpoint = torch.load(self.path, weights_only=False)
         except:
@@ -279,11 +280,12 @@ class ParallelTrainer:
         self.model.load_state_dict(checkpoint['model_state_dict'])
         # self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         # self.criterion.load_state_dict(checkpoint['loss'])
-        print("Model saved!")
+        print(f"Model loaded from {path}!")
         return self.model
     
-    def save_modelcheckpoint(self, path: Union[Path,str] = None):
-        path = path or self.path
+    def save_modelcheckpoint(self, best: bool = False):
+        path = "model.pth" if not best else "best.pth"
+        path = self.model_dir.joinpath(path)
         print(f"Try to save model checkpoint at {path}")
         save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
         with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, save_policy):
@@ -312,11 +314,11 @@ class ParallelTrainer:
 
         batch_size = seq.shape[0]
 
-        generated_tokens = torch.full((batch_size, 1), self.soa_token_id, device=device, dtype=torch.long)
+        generated_tokens = torch.full((batch_size, 1), self.bos_token_id, device=device, dtype=torch.long)
         finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
         propabilities = nn.functional.one_hot(generated_tokens, num_classes=self.model.vocab_size).cpu()
 
-        for _ in range(self.model.max_content - 1):
+        for _ in range(self.model.max_seq_len - 1):
             with torch.no_grad():
                 output = self.model(seq, generated_tokens, has_mask=True) 
             propabilities = torch.cat([propabilities, output.cpu()], dim=1)
@@ -324,7 +326,7 @@ class ParallelTrainer:
             generated_tokens = torch.cat([generated_tokens, next_tokens], dim=1)
 
             if testing:
-                finished |= (next_tokens.squeeze(1) == self.eoa_token_id)
+                finished |= (next_tokens.squeeze(1) == self.eos_token_id)
                 if finished.all():
                     break
         

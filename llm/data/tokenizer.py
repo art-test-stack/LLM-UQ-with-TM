@@ -9,8 +9,8 @@ class CONTROL_TOKENS:
     padding = '<|padding|>'
     tab = '<|tab|>'
     new_line = '<|new_line|>'
-    start_of_text = '<|startoftext|>'
-    end_of_text = '<|endoftext|>'
+    start_of_text = '<|begin_of_text|>'
+    end_of_text = '<|end_of_text|>'
     start_of_table = '<|startoftable|>'
     end_of_table = '<|endoftable|>'
     start_of_description = '<|startofdescription|>'
@@ -21,8 +21,6 @@ class CONTROL_TOKENS:
     end_of_question = '<|endofquestion|>'
     start_of_context = '<|startofcontext|>'
     end_of_context = '<|endofcontext|>'
-    start_of_answer = '<|startofanswer|>'
-    end_of_answer = '<|endofanswer|>'
 
 CONTROL_TOKENS_LIST = list(CONTROL_TOKENS.__dict__.values())[1:-3]
 tiktoken_models = list(tiktoken.model.MODEL_TO_ENCODING.keys())
@@ -35,8 +33,8 @@ class Tokenizer:
             self,
             model_name: str = "gpt-4o",
             pad_token: str = CONTROL_TOKENS.padding,
-            soa_token: str = CONTROL_TOKENS.start_of_answer,
-            eoa_token: str = CONTROL_TOKENS.end_of_answer,
+            bos_token: str = CONTROL_TOKENS.start_of_text,
+            eos_token: str = CONTROL_TOKENS.end_of_text,
         ) -> None:
         assert model_name in tiktoken_models, f"'{model_name}' is not a provided model"
         self.model = tiktoken.encoding_for_model(model_name)
@@ -51,10 +49,10 @@ class Tokenizer:
         # IF NOT USED, THE SPECIAL TOKENS ARE NOT ADDED
         self.pad_token_id = 0 
 
-        self.add_special_tokens([pad_token, soa_token, eoa_token])
+        self.add_special_tokens([pad_token, bos_token, eos_token])
         self.pad_token_id = self.special_tokens[pad_token]
-        self.soa_token_id = self.special_tokens[soa_token]
-        self.eoa_token_id = self.special_tokens[eoa_token]
+        self.bos_token_id = self.special_tokens[bos_token]
+        self.eos_token_id = self.special_tokens[eos_token]
 
         self._compute_vocab_size()
 

@@ -1,0 +1,31 @@
+model:
+  name: "Llama3.2-1B"
+  type: "torch"
+  tokenizer: "gpt2"
+  config:
+    num_layers: 12
+    model_size: 512
+    dim_ffn: 1024
+    max_seq_len: 512
+    nhead: 12
+    dropout: 0.1
+  ckpt_dir: "CKPT_DIR"
+  dir: "MODEL_DIR"
+
+training:
+  batch_size: 16
+  test_batch_size: 16
+  epochs: 3000
+  learning_rate: 1e-4
+  step_size: 20
+  gamma: 0.7
+  patience: 3000
+  min_delta: 0.0
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  optimizer: "adam"
+  loss_function: "cross_entropy"
+
+data:
+  short_answer: True
+  uq_path: "dataset/uq"

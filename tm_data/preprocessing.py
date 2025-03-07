@@ -119,7 +119,10 @@ class InputCSV:
         # PB 2: store grads of all epochs maybe very heavy computationally
         # Temporary solution: take the stats at each batch iteration at store the mean of each stats at the end of the epoch
         # self.model.clean_nan()
-        grads = self.model.get_grads()
+        try:
+            grads = self.model.get_grads()
+        except:
+            grads = [ p.grad for p in self.model.parameters() if p.grad is not None ]
         grads = [ torch.clone(grad) for grad in grads ]
     
         # for i, grad in enumerate(grads):

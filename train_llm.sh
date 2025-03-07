@@ -10,4 +10,4 @@ source .env && sbatch --job-name=$JOB_NAME.$RUN_TYPE \
     --mem=$MEM \
     --output=$OUTPUT_DIR/$JOB_NAME.$RUN_TYPE.txt \
     --export=ENV_DIR=$ENV_DIR \
-    parallel.slurm 
+    train_llm.slurm 

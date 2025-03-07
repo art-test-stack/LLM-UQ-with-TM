@@ -11,7 +11,7 @@ class FinQADataset(Dataset):
     def __init__(
             self, 
             data: Any, 
-            tokenizer: Tokenizer,
+            tokenizer: Tokenizer = None,
             max_length: int = 1024,
             max_q_length: Union[int, None] = None,
             max_a_length: Union[int, None] = None,
@@ -23,10 +23,9 @@ class FinQADataset(Dataset):
         self.tokenizer = tokenizer
         self.max_q_len = max_q_length if max_q_length else max_length
         self.max_a_len = max_a_length if max_a_length else max_length
-        if short_answer:
-            self.max_a_len = 16
-        self.pad_token_id = tokenizer.special_tokens[CONTROL_TOKENS.padding]
-        self.q_token_id = tokenizer.special_tokens[CONTROL_TOKENS.start_of_text]
+        
+        # self.pad_token_id = tokenizer.pad_token_id
+        # self.q_token_id = tokenizer.special_tokens[CONTROL_TOKENS.start_of_text]
         self.short_answer = short_answer
 
         # questions = [ tokenizer.encode(question) for question in data["question"]]
@@ -65,32 +64,35 @@ class FinQADataset(Dataset):
             program = data["program_re"]
 
         # WRAP THEM
-        question = f"{CONTROL_TOKENS.start_of_context}{pre_text}{CONTROL_TOKENS.end_of_context}{CONTROL_TOKENS.start_of_table}{table}{CONTROL_TOKENS.end_of_table}{CONTROL_TOKENS.start_of_text}{post_text}{CONTROL_TOKENS.end_of_text}{CONTROL_TOKENS.start_of_question}{question}{CONTROL_TOKENS.end_of_question}"
-        answer = f"{CONTROL_TOKENS.start_of_answer}{answer}{CONTROL_TOKENS.end_of_answer}" 
+        def format_table(table_str):
+            table_str = table_str.replace("[[", "[\n    [")
+            table_str = table_str.replace("], [", "],\n    [")
+            table_str = table_str.replace("]]", "]\n]")
+            return table_str
+
+        formatted_table = format_table(table)
+
+        question = f"""{CONTROL_TOKENS.start_of_context}{pre_text.rstrip(' .')}.{CONTROL_TOKENS.end_of_context}{CONTROL_TOKENS.start_of_table}{formatted_table}.{CONTROL_TOKENS.end_of_table}{CONTROL_TOKENS.start_of_description}{post_text.rstrip(' .')}.{CONTROL_TOKENS.end_of_description}{CONTROL_TOKENS.start_of_question}{question.rstrip(' .')}.{CONTROL_TOKENS.end_of_question}"""
+        answer = f"{CONTROL_TOKENS.start_of_text}{answer}" 
         if not self.short_answer:
             answer += f"{CONTROL_TOKENS.start_of_program}{program}{CONTROL_TOKENS.end_of_program}"
+        answer += f"{CONTROL_TOKENS.end_of_text}"
 
+        # if not self.tokenize:
+        #     # return question[-self.max_q_len:], answer[-self.max_a_len:]
+        #     return question, answer
         # TOKENIZE THEM
         q_enc = self.tokenizer(question, padding='max_length', 
                                max_length=self.max_q_len, return_tensors=True)
         
         a_enc = self.tokenizer(answer, padding='max_length', 
                                max_length=self.max_a_len, return_tensors=True)
-
+        
         input_ids = q_enc.squeeze(0)
-        # attention_mask = causal_mask(len(a_enc)) # + padding_mask(a_enc, self.pad_token_id)
         labels = a_enc.squeeze(0) 
-        # labels[labels == self.tokenizer.pad_token_id] = -100  
 
-        return input_ids, labels # , attention_mask
-
-
-def causal_mask(seq_len):
-    mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1)
-    return mask.masked_fill(mask == 1, float('-inf'))
-
-def padding_mask(seq, pad_token_id):
-    return (seq == pad_token_id).unsqueeze(1) # .unsqueeze(2)
+        seq = torch.cat([input_ids, labels], dim=1)
+        return seq 
   
 def get_data(
         tokenizer: Tokenizer,
