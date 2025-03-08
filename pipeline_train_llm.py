@@ -1,5 +1,4 @@
 from llm.data.dataset import get_data
-from llm.data.tokenizer import Tokenizer, CONTROL_TOKENS, CONTROL_TOKENS_LIST
 from llm.handler import model_handler
 from llm.parallel_trainer import ParallelTrainer
 from llm.eval import EvalTask
@@ -66,7 +65,6 @@ def train_llm_pipeline(rank, world_size, args):
     data_params = params["data"]
 
     model, tokenizer = model_handler(model_params)
-    print("tokenizer.get_vocab_size", tokenizer.get_vocab_size())
 
     # TODO: add to settings
     dataset_params = {
@@ -85,9 +83,8 @@ def train_llm_pipeline(rank, world_size, args):
     train_kwargs = { 'batch_size': training_params["batch_size"], 'sampler': sampler1 }
     test_kwargs = { 'batch_size': training_params["test_batch_size"], 'sampler': sampler2 }
     cuda_kwargs = {
-        'num_workers': 2,
+        'num_workers': 1,
         'pin_memory': True,
-        "generator": torch.Generator(device="cuda")
         # 'shuffle': True
     }
     

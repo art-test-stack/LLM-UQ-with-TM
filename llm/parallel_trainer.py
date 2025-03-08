@@ -140,6 +140,7 @@ class ParallelTrainer:
         ddp_loss = torch.zeros(2).to(self.rank)
 
         for i, seq in enumerate(train_loader):
+            print("batch", i)
             # TODO handle Llama
             assert not torch.isnan(seq).any(), "NaN found in sources!"
             # assert not torch.isnan(tgt).any(), "NaN found in targets!"

@@ -10,7 +10,78 @@ from typing import Callable
 import os
 from pathlib import Path
 
+import tiktoken
 
+
+def get_reserved_special_tokens(
+            special_tokens_size: int, 
+            reserved_special_token_pattern: Callable = lambda x: f"<|reserved_special_token_{x}|>"
+        ):
+        return [reserved_special_token_pattern(i) for i in range(2, special_tokens_size)]
+
+class TokenizerHandler:
+    def __init__(self, tokenizer):
+        self.main = tokenizer 
+
+    def __getattr__(self, attr):
+        return getattr(self.main, attr)
+
+    def __call__(
+            self, 
+            text: str, 
+            padding: str = "max_length", 
+            max_length: int = 1024, 
+            return_tensors: bool = True
+        ):
+        token_ids = self.encode(
+            text, 
+            bos=False, 
+            eos=False,
+            allowed_special="all"
+        )
+        if padding == "max_length":
+            if len(token_ids) < max_length:
+                token_ids = token_ids + [self.pad_token_id] * (max_length - len(token_ids))
+            else:
+                token_ids = token_ids[:max_length]
+        if return_tensors:
+            token_ids = torch.tensor(token_ids)
+        return token_ids
+    
+    def get_vocab_size(self):
+        return self.model.n_vocab
+    
+    def add_control_tokens(self, control_tokens):
+        for token in control_tokens:
+            reserved_special_tokens = get_reserved_special_tokens(self.main.num_reserved_special_tokens)
+            if token == CONTROL_TOKENS.padding and "<|reserved_special_token_1|>" in self.special_tokens:
+                    self.special_tokens[token] = self.special_tokens.pop("<|reserved_special_token_1|>")
+                    # reserved_special_tokens.remove("<|reserved_special_token_1|>")
+            for reserved_token in reserved_special_tokens:
+                if token not in self.special_tokens and reserved_token in self.special_tokens:
+                    self.special_tokens[token] = self.special_tokens.pop(
+                        reserved_token
+                    )
+                    reserved_special_tokens.remove(reserved_token)
+                    break
+        self.special_tokens = dict(sorted(self.special_tokens.items(), key=lambda item: item[1]))
+        self.model._special_tokens = self.special_tokens
+        self.main.special_tokens = self.special_tokens
+
+        self.main.model = tiktoken.Encoding(
+            name=self.main.model.name,
+            pat_str=self.main.model._pat_str,
+            mergeable_ranks=self.main.model._mergeable_ranks,
+            special_tokens=self.special_tokens,
+        )
+
+        self.pad_token_id = self.special_tokens[CONTROL_TOKENS.padding] 
+        self.bos_token_id = self.special_tokens[CONTROL_TOKENS.start_of_text] 
+        self.eos_token_id = self.special_tokens[CONTROL_TOKENS.end_of_text]       
+        
+    
+    
+        
 def llama_handler(params):
     ckpt_dir = os.getenv(params["ckpt_dir"])
     ckpt_dir = Path(ckpt_dir).joinpath(params["name"])
@@ -49,63 +120,14 @@ def llama_handler(params):
         h = self.norm(h)
         output = self.output(h).float()
         return output
-
-    def __call__(
-            self, 
-            text: str, 
-            padding: str = "max_length", 
-            max_length: int = 1024, 
-            return_tensors: bool = True
-        ):
-        token_ids = self.encode(
-            text, 
-            bos=False, 
-            eos=False,
-            allowed_special="all"
-        )
-        if return_tensors:
-            token_ids = torch.tensor(token_ids)
-        if padding == "max_length":
-            if len(token_ids) < max_length:
-                token_ids = token_ids + [self.pad_token_id] * (max_length - len(token_ids))
-            else:
-                token_ids = token_ids[:max_length]
-        return token_ids
-
-    def get_vocab_size(self):
-        return self.model.n_vocab
     
     model = llama_obj.model
     model.forward = forward.__get__(model)
     
     tokenizer = llama_obj.tokenizer
-    tokenizer.get_vocab_size = get_vocab_size.__get__(tokenizer)
-    tokenizer.__call__ = __call__.__get__(tokenizer)
-
-    def get_reserved_special_tokens(
-            special_tokens_size: int, 
-            reserved_special_token_pattern: Callable = lambda x: f"<|reserved_special_token_{x}|>"
-        ):
-        return [reserved_special_token_pattern(i) for i in range(special_tokens_size)]
-
-    def add_control_tokens(tokenizer, control_tokens):
-        for token in control_tokens:
-            reserved_special_tokens = get_reserved_special_tokens(tokenizer.num_reserved_special_tokens)
-            for reserved_token in reserved_special_tokens:
-                if token not in tokenizer.special_tokens and reserved_token in tokenizer.special_tokens:
-                    tokenizer.special_tokens[token] = tokenizer.special_tokens.pop(
-                        reserved_token
-                    )
-                    reserved_special_tokens.remove(reserved_token)
-                    break
-        tokenizer.special_tokens = dict(sorted(tokenizer.special_tokens.items(), key=lambda item: item[1]))
-        tokenizer.model._special_tokens = tokenizer.special_tokens
-        tokenizer.pad_token_id = tokenizer.special_tokens[CONTROL_TOKENS.padding] 
-        tokenizer.bos_token_id = tokenizer.bos_id
-        tokenizer.eos_token_id = tokenizer.eos_id       
-        return tokenizer
-    
-    tokenizer = add_control_tokens(tokenizer, CONTROL_TOKENS_LIST)
+    tokenizer = TokenizerHandler(tokenizer)
+    tokenizer = tokenizer.add_control_tokens(CONTROL_TOKENS_LIST)
+    print(tokenizer.decode(tokenizer("Does it work?", padding="None",return_tensors=False)))
     return model, tokenizer
 
 

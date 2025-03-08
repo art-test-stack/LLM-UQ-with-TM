@@ -25,7 +25,6 @@ class FinQADataset(Dataset):
         # self.pad_token_id = tokenizer.pad_token_id
         # self.q_token_id = tokenizer.special_tokens[CONTROL_TOKENS.start_of_text]
         self.short_answer = short_answer
-
         # questions = [ tokenizer.encode(question) for question in data["question"]]
         # answers = [ tokenizer.encode(answer) for answer in data["answer"]]
 
@@ -85,10 +84,8 @@ class FinQADataset(Dataset):
         
         labels = self.tokenizer(answer, padding='max_length', 
                                max_length=self.max_a_len, return_tensors=True)
-        print("input_ids.shape", input_ids.shape)
-        print("labels.shape", labels.shape)
-        seq = torch.cat([input_ids, labels]).squeeze(0) 
-        print("seq.shape", seq.shape)
+        seq = torch.cat([input_ids, labels]).squeeze(0).long()
+        print("seq.device",seq.device)
         return seq 
   
 def get_data(
@@ -110,7 +107,7 @@ def get_data(
         "max_length": max_length,
         "max_q_length": max_q_length,
         "max_a_length": max_a_length,
-        "short_answer": short_answer
+        "short_answer": short_answer,
     }
     train = FinQADataset(train, **params)
     test = FinQADataset(test, **params)
