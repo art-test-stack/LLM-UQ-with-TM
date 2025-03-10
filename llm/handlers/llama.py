@@ -115,6 +115,7 @@ class TokenizerHandler:
 def llama_forward(self, src: torch.Tensor, start_pos: int):
     print("start pos", start_pos)
     _bsz, seq_len = src.shape
+    device = src.device
     h = self.tok_embeddings(src)
 
     # Ensure `freqs_cis` is properly sliced
@@ -123,21 +124,17 @@ def llama_forward(self, src: torch.Tensor, start_pos: int):
 
     model_parallel_size = fs_init.get_model_parallel_world_size()
     n_local_heads = self.params.n_heads // model_parallel_size
-    # n_local_heads = self.params
-    # Create causal attention mask
-    print("n_local_heads", n_local_heads)
-    print("model_parallel_size", model_parallel_size)
-    print("self.params", self.params)
     mask = None
     if seq_len > 1:
-        mask = torch.full((_bsz, seq_len), float('-inf'), device=src.device)
 
+        mask = torch.full((_bsz, seq_len, seq_len), float('-inf'), device=device)
         for i in range(_bsz):
-            mask[i, start_pos[i]:] = 0.0
+            mask[i, :, :] = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=start_pos[i])
+            mask[i, seq_len-start_pos[i]:, :] = float('-inf')
 
-        
-        mask = mask.unsqueeze(1).expand(_bsz, n_local_heads, seq_len, seq_len)  
-        mask = mask.flatten(0, 1) 
+        mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        mask = mask.unsqueeze(1)
+        mask = mask.expand(_bsz, n_local_heads, seq_len, seq_len) 
 
         if mask.device.type == "mps":
             mask = torch.nan_to_num(mask, nan=0.0)

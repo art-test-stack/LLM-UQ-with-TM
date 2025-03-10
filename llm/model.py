@@ -104,18 +104,17 @@ class LLM(nn.Module):
         # mask = torch.tril(torch.ones(seq_len, seq_len, device=device)).unsqueeze(0)
         # mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
 
-        mask = torch.full((batch_size, seq_len), float('-inf'), device=device)
-
+        
+        mask = torch.full((batch_size, seq_len, seq_len), float('-inf'), device=device)
         for i in range(batch_size):
-            mask[i, starting_pos[i]:] = 0.0 
-
-        # Expand to (batch_size, seq_len, seq_len) for self-attention
-        mask = mask.unsqueeze(1).expand(batch_size, self.nhead, seq_len, seq_len)  
-        mask = mask.flatten(0, 1) 
+            mask[i, :, :] = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=starting_pos[i])
+            mask[i, seq_len-starting_pos[i]:, :] = float('-inf')
+        mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        mask = mask.unsqueeze(1)
+        mask = mask.expand(batch_size, self.nhead, seq_len, seq_len)  
+        mask = mask.flatten(0, 1)
 
         for layer in self.layers:
-            print("x.shape", x.shape)
-            print("mask.shape", mask.shape)
             x = layer(x, mask)
 
         x = self.ln_final(x)
