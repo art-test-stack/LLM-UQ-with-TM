@@ -79,7 +79,14 @@ class TokenizerHandler:
 
         self.pad_token_id = self.special_tokens[CONTROL_TOKENS.padding] 
         self.bos_token_id = self.special_tokens[CONTROL_TOKENS.start_of_text] 
-        self.eos_token_id = self.special_tokens[CONTROL_TOKENS.end_of_text]       
+        self.eos_token_id = self.special_tokens[CONTROL_TOKENS.end_of_text] 
+
+    def decode(self, token_ids):
+        if isinstance(token_ids, torch.Tensor):
+            token_ids = token_ids.tolist()
+        if isinstance(token_ids[0], list):
+            return [self.main.decode(ids) for ids in token_ids]
+        return self.main.decode(token_ids)      
         
 # def forward(self, tokens: torch.Tensor, start_pos: int):
 #     print("start pos", start_pos)
@@ -113,14 +120,12 @@ class TokenizerHandler:
 #     return output
 
 def llama_forward(self, src: torch.Tensor, start_pos: int):
-    print("start pos", start_pos)
     _bsz, seq_len = src.shape
     device = src.device
     h = self.tok_embeddings(src)
 
-    # Ensure `freqs_cis` is properly sliced
     self.freqs_cis = self.freqs_cis.to(h.device)
-    freqs_cis = self.freqs_cis[:seq_len]  # Use only the required sequence length
+    freqs_cis = self.freqs_cis[:seq_len] 
 
     model_parallel_size = fs_init.get_model_parallel_world_size()
     n_local_heads = self.params.n_heads // model_parallel_size

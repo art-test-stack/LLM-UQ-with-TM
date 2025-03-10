@@ -135,22 +135,19 @@ class ParallelTrainer:
             pickle.dump(history, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
-        # return 0
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
 
         for i, (seq, start_pos) in enumerate(train_loader):
-            # TODO handle Llama
             assert not torch.isnan(seq).any(), "NaN found in sources!"
-            # assert not torch.isnan(tgt).any(), "NaN found in targets!"
-            seq = seq.to(self.rank) #, tgt.to(self.rank)
-            output = self.model(seq, start_pos)[:, -self.len_answer:, :]
-            loss = self.criterion(output.view(-1, output.size(-1)), seq[:, -self.len_answer:, :].view(-1))
+            seq = seq.to(self.rank)
+            output = self.model(seq, start_pos)
+            loss = self.criterion(output.view(-1, output.size(-1)), seq.view(-1))
             loss.backward()
             if (i + 1) % accumulation_steps == 0:
-                self.optimizer.step()
                 if self.rank == 0 or True:
                     self.csv_object.update_model()
+                self.optimizer.step()
                 self.optimizer.zero_grad()
                 self.model.zero_grad()
             # self.optimizer.step()
@@ -163,40 +160,50 @@ class ParallelTrainer:
     
     def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
         self.model.eval()
-        ddp_loss = torch.zeros(2, device=self.rank)  # [total loss, total tokens]
+        ddp_loss = torch.zeros(2, device=self.rank)
 
         with torch.no_grad():
-            for seq, start_pos  in val_loader:
+            for seq, start_pos in val_loader:
                 assert not torch.isnan(seq).any(), "NaN found in sources!"
                 seq = seq.to(self.rank)
+                start_pos = start_pos.to(self.rank) 
 
-                batch_size = seq.shape[0]
-                seq_len = self.len_answer
+                batch_size, seq_len = seq.shape
+                generated = seq.clone()  
+                
+                batch_indices = torch.arange(batch_size, device=generated.device)
+                valid_mask = start_pos < seq_len  
+                valid_batches = batch_indices[valid_mask]
+                start_idxs = start_pos[valid_mask]
 
-                output = torch.full((batch_size, 1), self.bos_token_id, dtype=torch.long, device=self.rank)
-                finished = torch.zeros(batch_size, dtype=torch.bool, device=self.rank)
-                for i in range(seq_len - 1):
-                    logits = self.model(seq, start_pos + i)
+                for i in range(seq_len - 1): 
+                    active_mask = (start_idxs <= i) & (i < seq_len - 1) 
+                    active_batches = valid_batches[active_mask]
+                    
+                    if active_batches.numel() == 0:
+                        continue 
+                    
+                    logits = self.model(generated[active_batches, :i+1], start_pos[active_batches] + i)
                     logits = logits[:, -1, :] 
 
-                    loss = self.criterion(logits, seq[:, start_pos + i])
+                    vocab_size = logits.size(-1)
+                    targets = seq[active_batches, i+1].view(-1)
+
+                    loss = self.criterion(logits.view(-1, vocab_size), targets)
+                    
                     ddp_loss[0] += loss.item()
-                    ddp_loss[1] += batch_size 
+                    ddp_loss[1] += targets.numel()
 
-                    next_token = logits.argmax(dim=-1, keepdim=True)
-                    output = torch.cat([output, next_token], dim=1)
+                    if mode == "greedy":
+                        next_token = logits.argmax(dim=-1)
+                    else:
+                        probs = torch.softmax(logits, dim=-1)
+                        next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
 
-                    finished |= (next_token.squeeze(1) == self.eos_token_id)
-                    if finished.all():
-                        padding = torch.full((batch_size, seq_len - output.size(1)), self.pad_token_id, dtype=torch.long, device=self.rank)
-                        output = torch.cat([output, padding], dim=1)
-                        break
-                self.eval_task.update(refs=seq[:,-seq_len], preds=output)
+                    generated[active_batches, i+1] = next_token  
+                self.eval_task.update(refs=seq, preds=generated)
+        return ddp_loss[0] / ddp_loss[1] if ddp_loss[1] > 0 else 0
 
-        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)        
-        test_loss = ddp_loss[0] / ddp_loss[1]
-        return float(test_loss.cpu().numpy())
-    
     @DeprecationWarning
     def _infer(self, seq, mode: str = "greedy"):
         self.model.eval() 
