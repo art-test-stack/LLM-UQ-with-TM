@@ -56,24 +56,30 @@ class Tokenizer:
 
         self._compute_vocab_size()
 
-
     def get_vocab_size(self) -> int:
         return self.vocab_size
     
     def _compute_vocab_size(self) -> int:
-        self.vocab_size = self.model.n_vocab - len(self._get_missing_idx())
+        self.vocab_size = self.model.n_vocab # - len(self._get_missing_idx())
 
     def add_special_tokens(self, special_tokens: Union[List[str],str]) -> None:
+        print()
         special_tokens = special_tokens if isinstance(special_tokens, list) else list(special_tokens)
         special_tokens = [str(special_token) for special_token in special_tokens if special_token not in self.model._special_tokens] 
         missing_token_idx = self._get_missing_idx()
         token_ids = missing_token_idx[:len(special_tokens)] if len(missing_token_idx) >= len(special_tokens) else missing_token_idx + list(range(self.model.n_vocab, self.model.n_vocab + len(special_tokens) - len(missing_token_idx)))
-
-        self.model._special_tokens |= {
+        
+        special_tokens = {
             token: id
             for token, id in zip(special_tokens, token_ids)
         }
-        self.model._core_bpe = _tiktoken.CoreBPE(self.mergeable_ranks, self.model._special_tokens, self.pat_str)
+        self.model = tiktoken.Encoding(
+            name=self.model.name,
+            pat_str=self.model._pat_str,
+            mergeable_ranks=self.model._mergeable_ranks,
+            special_tokens=special_tokens,
+        )
+        # self.model._core_bpe = _tiktoken.CoreBPE(self.mergeable_ranks, self.model._special_tokens, self.pat_str)
         self.special_tokens = self.model._special_tokens
         self._compute_vocab_size()
     

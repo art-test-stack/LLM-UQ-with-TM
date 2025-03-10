@@ -139,14 +139,12 @@ class ParallelTrainer:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
 
-        for i, seq in enumerate(train_loader):
-            print("batch", i)
+        for i, (seq, start_pos) in enumerate(train_loader):
             # TODO handle Llama
             assert not torch.isnan(seq).any(), "NaN found in sources!"
             # assert not torch.isnan(tgt).any(), "NaN found in targets!"
             seq = seq.to(self.rank) #, tgt.to(self.rank)
-            self.optimizer.zero_grad()
-            output = self.model(seq, seq.shape[1] - self.len_answer)[:, -self.len_answer:, :]
+            output = self.model(seq, start_pos)[:, -self.len_answer:, :]
             loss = self.criterion(output.view(-1, output.size(-1)), seq[:, -self.len_answer:, :].view(-1))
             loss.backward()
             if (i + 1) % accumulation_steps == 0:
@@ -168,7 +166,7 @@ class ParallelTrainer:
         ddp_loss = torch.zeros(2, device=self.rank)  # [total loss, total tokens]
 
         with torch.no_grad():
-            for seq in val_loader:
+            for seq, start_pos  in val_loader:
                 assert not torch.isnan(seq).any(), "NaN found in sources!"
                 seq = seq.to(self.rank)
 
@@ -178,10 +176,10 @@ class ParallelTrainer:
                 output = torch.full((batch_size, 1), self.bos_token_id, dtype=torch.long, device=self.rank)
                 finished = torch.zeros(batch_size, dtype=torch.bool, device=self.rank)
                 for i in range(seq_len - 1):
-                    logits = self.model(seq, seq.shape[1] - seq_len)
+                    logits = self.model(seq, start_pos + i)
                     logits = logits[:, -1, :] 
 
-                    loss = self.criterion(logits, seq[:, seq.shape[1] - seq_len + i])
+                    loss = self.criterion(logits, seq[:, start_pos + i])
                     ddp_loss[0] += loss.item()
                     ddp_loss[1] += batch_size 
 

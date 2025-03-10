@@ -3,6 +3,7 @@ from pipeline_train_llm import train_llm_pipeline
 
 import torch
 import torch.multiprocessing as mp
+import torch.distributed as dist
 
 import argparse
 from dotenv import load_dotenv
@@ -35,14 +36,22 @@ if __name__=="__main__":
     WORLD_SIZE = torch.cuda.device_count()
     print(f"WORLD_SIZE: {WORLD_SIZE}")
     load_dotenv()
+    # from utils import get_device
+    # torch.cuda.set_per_process_memory_fraction(1., device=get_device())
+    # torch.backends.cudnn.benchmark = True
     if WORLD_SIZE == 0:
         print("No GPU available")
         main_train(args)
     elif WORLD_SIZE==1:
         train_llm_pipeline(rank=0, world_size=1, args=args)
     else:
-        mp.spawn(train_llm_pipeline,
-            args=(WORLD_SIZE, args),
-            nprocs=WORLD_SIZE,
-            join=True
-        )
+        try:
+            mp.spawn(train_llm_pipeline,
+                args=(WORLD_SIZE, args),
+                nprocs=WORLD_SIZE,
+                join=True
+            )
+        
+        finally:
+            if dist.is_initialized():
+                dist.destroy_process_group()

@@ -1,16 +1,16 @@
-from llm.data.tokenizer import Tokenizer, CONTROL_TOKENS, CONTROL_TOKENS_LIST
-from llm.model import LLM
-
+from llm.data.tokenizer import CONTROL_TOKENS, CONTROL_TOKENS_LIST
 from utils import get_device
 
 from llama_models.llama3.reference_impl.generation import Llama
+
+import fairscale.nn.model_parallel.initialize as fs_init
+
+import tiktoken
 import torch
 
 from typing import Callable
 import os
 from pathlib import Path
-
-import tiktoken
 
 
 def get_reserved_special_tokens(
@@ -20,11 +20,13 @@ def get_reserved_special_tokens(
         return [reserved_special_token_pattern(i) for i in range(2, special_tokens_size)]
 
 class TokenizerHandler:
-    def __init__(self, tokenizer):
-        self.main = tokenizer 
+    def __init__(self, tknzr):
+        self.main = tknzr 
 
     def __getattr__(self, attr):
-        return getattr(self.main, attr)
+        if hasattr(self.main, attr):
+            return getattr(self.main, attr)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{attr}'")
 
     def __call__(
             self, 
@@ -45,7 +47,7 @@ class TokenizerHandler:
             else:
                 token_ids = token_ids[:max_length]
         if return_tensors:
-            token_ids = torch.tensor(token_ids)
+            token_ids = torch.tensor(token_ids, dtype=torch.long)
         return token_ids
     
     def get_vocab_size(self):
@@ -79,9 +81,78 @@ class TokenizerHandler:
         self.bos_token_id = self.special_tokens[CONTROL_TOKENS.start_of_text] 
         self.eos_token_id = self.special_tokens[CONTROL_TOKENS.end_of_text]       
         
-    
-    
+# def forward(self, tokens: torch.Tensor, start_pos: int):
+#     print("start pos", start_pos)
+#     _bsz, seq_len = tokens.shape
+#     h = self.tok_embeddings(tokens)
+#     self.freqs_cis = self.freqs_cis.to(h.device)
+#     freqs_cis = self.freqs_cis[start_pos : start_pos + seq_len]
+
+#     mask = None
+#     if seq_len > 1:
+#         mask = torch.full((seq_len, seq_len), float("-inf"), device=tokens.device)
+
+#         mask = torch.triu(mask, diagonal=1)
+
+#         # https://github.com/pytorch/pytorch/issues/100005
+#         # torch.triu is buggy when the device is mps: filled values are
+#         # nan instead of 0.
+#         if mask.device.type == torch.device("mps").type:
+#             mask = torch.nan_to_num(mask, nan=0.0)
+
+#         # When performing key-value caching, we compute the attention scores
+#         # only for the new sequence. Thus, the matrix of scores is of size
+#         # (seq_len, cache_len + seq_len), and the only masked entries are (i, j) for
+#         # j > cache_len + i, since row i corresponds to token cache_len + i.
+#         mask = torch.hstack([torch.zeros((seq_len, start_pos), device=tokens.device), mask]).type_as(h)
+
+#     for layer in self.layers:
+#         h = layer(h, start_pos, freqs_cis, mask)
+#     h = self.norm(h)
+#     output = self.output(h).float()
+#     return output
+
+def llama_forward(self, src: torch.Tensor, start_pos: int):
+    print("start pos", start_pos)
+    _bsz, seq_len = src.shape
+    h = self.tok_embeddings(src)
+
+    # Ensure `freqs_cis` is properly sliced
+    self.freqs_cis = self.freqs_cis.to(h.device)
+    freqs_cis = self.freqs_cis[:seq_len]  # Use only the required sequence length
+
+    model_parallel_size = fs_init.get_model_parallel_world_size()
+    n_local_heads = self.params.n_heads // model_parallel_size
+    # n_local_heads = self.params
+    # Create causal attention mask
+    print("n_local_heads", n_local_heads)
+    print("model_parallel_size", model_parallel_size)
+    print("self.params", self.params)
+    mask = None
+    if seq_len > 1:
+        mask = torch.full((_bsz, seq_len), float('-inf'), device=src.device)
+
+        for i in range(_bsz):
+            mask[i, start_pos[i]:] = 0.0
+
         
+        mask = mask.unsqueeze(1).expand(_bsz, n_local_heads, seq_len, seq_len)  
+        mask = mask.flatten(0, 1) 
+
+        if mask.device.type == "mps":
+            mask = torch.nan_to_num(mask, nan=0.0)
+
+        mask = mask.type_as(h)
+
+    for layer in self.layers:
+        h = layer(h, 0, freqs_cis, mask)
+
+    h = self.norm(h)
+    output = self.output(h).float()
+    
+    return output
+
+
 def llama_handler(params):
     ckpt_dir = os.getenv(params["ckpt_dir"])
     ckpt_dir = Path(ckpt_dir).joinpath(params["name"])
@@ -91,67 +162,13 @@ def llama_handler(params):
         max_batch_size=8,
         device=get_device()
     )
-    def forward(self, src: torch.Tensor, start_pos: int):
-        _bsz, seqlen = src.shape
-        h = self.tok_embeddings(src)
-        self.freqs_cis = self.freqs_cis.to(h.device)
-        freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
-
-        mask = None
-        if seqlen > 1:
-            mask = torch.full((seqlen, seqlen), float("-inf"), device=src.device)
-
-            mask = torch.triu(mask, diagonal=1)
-
-            # https://github.com/pytorch/pytorch/issues/100005
-            # torch.triu is buggy when the device is mps: filled values are
-            # nan instead of 0.
-            if mask.device.type == torch.device("mps").type:
-                mask = torch.nan_to_num(mask, nan=0.0)
-
-            # When performing key-value caching, we compute the attention scores
-            # only for the new sequence. Thus, the matrix of scores is of size
-            # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
-            # j > cache_len + i, since row i corresponds to token cache_len + i.
-            mask = torch.hstack([torch.zeros((seqlen, start_pos), device=src.device), mask]).type_as(h)
-
-        for layer in self.layers:
-            h = layer(h, start_pos, freqs_cis, mask)
-        h = self.norm(h)
-        output = self.output(h).float()
-        return output
     
     model = llama_obj.model
-    model.forward = forward.__get__(model)
+    model.forward = llama_forward.__get__(model)
     
-    tokenizer = llama_obj.tokenizer
-    tokenizer = TokenizerHandler(tokenizer)
-    tokenizer = tokenizer.add_control_tokens(CONTROL_TOKENS_LIST)
+    tknzr = llama_obj.tokenizer
+    tokenizer = TokenizerHandler(tknzr)
+    tokenizer.add_control_tokens(CONTROL_TOKENS_LIST)
     print(tokenizer.decode(tokenizer("Does it work?", padding="None",return_tensors=False)))
     return model, tokenizer
 
-
-def torch_handler(params):
-    try:
-        tokenizer = Tokenizer(model_name=params["tokenizer"])
-    except:
-        tokenizer = Tokenizer(model_name="gpt2")
-    tokenizer.add_special_tokens(CONTROL_TOKENS_LIST)
-
-    model = LLM(
-        vocab_size=tokenizer.get_vocab_size(), 
-        padding_idx=tokenizer.pad_token_id, 
-        **params["config"]
-    )
-    # model.forward = forward.__get__(model)
-    
-    return model, tokenizer
-
-
-def model_handler(params):
-    if params["type"] == "llama":
-        return llama_handler(params)
-    elif params["type"] == "torch":
-        return torch_handler(params)
-    else:
-        raise ValueError("Model type not supported")

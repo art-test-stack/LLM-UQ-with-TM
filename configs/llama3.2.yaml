@@ -3,12 +3,12 @@ model:
   type: "llama"
   tokenizer: "gpt2"
   config:
-    num_layers: 12
-    model_size: 512
-    dim_ffn: 1024
-    max_seq_len: 512
-    nhead: 16
+    # num_layers: 12
+    # model_size: 512
+    # dim_ffn: 1024
+    # nhead: 16
     dropout: 0.1
+    max_seq_len: 2048
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
 
@@ -23,7 +23,7 @@ training:
   min_delta: 0.0
   weight_decay: 0.01
   betas: [0.9, 0.999]
-  optimizer: "adam"
+  optimizer: "adamw"
   loss_function: "cross_entropy"
 
 data:

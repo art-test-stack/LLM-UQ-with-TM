@@ -1,5 +1,5 @@
 from llm.data.dataset import get_data
-from llm.handler import model_handler
+from llm.handlers.handler import model_handler
 from llm.parallel_trainer import ParallelTrainer
 from llm.eval import EvalTask
 
@@ -33,9 +33,9 @@ import functools
 import yaml
 
 
-def setup(rank, world_size):
+def setup(rank, world_size, master_port: str = '12355'):
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ['MASTER_PORT'] = master_port
 
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
@@ -56,7 +56,22 @@ def print_fsdp_wrapping(module, prefix=""):
 
 def train_llm_pipeline(rank, world_size, args):
     print("rank", rank)
-    setup(rank, world_size)
+    setup_ok = False
+    i = 12355
+    while not setup_ok:
+        try:
+            setup(rank, world_size, str(i))
+            setup_ok = True
+            print(f"setup on MASTER_PORT {i}")
+        except:
+            i += 1
+
+            if i > 12400:
+                raise IndexError
+    
+    torch.cuda.set_per_process_memory_fraction(1., device=rank)
+    torch.backends.cudnn.benchmark = True
+
     with open(args.params_file, "r") as file:
         params = yaml.safe_load(file)
 
@@ -83,7 +98,7 @@ def train_llm_pipeline(rank, world_size, args):
     train_kwargs = { 'batch_size': training_params["batch_size"], 'sampler': sampler1 }
     test_kwargs = { 'batch_size': training_params["test_batch_size"], 'sampler': sampler2 }
     cuda_kwargs = {
-        'num_workers': 1,
+        'num_workers': 0,
         'pin_memory': True,
         # 'shuffle': True
     }
@@ -97,7 +112,6 @@ def train_llm_pipeline(rank, world_size, args):
 
     vocab_size = tokenizer.get_vocab_size()
     # max_content = max(train.max_q_len, val.max_a_len)
-
     model = model.to(rank)
 
     if args.verbose:
@@ -113,18 +127,23 @@ def train_llm_pipeline(rank, world_size, args):
     if args.verbose:
         try:
             model_mem_required = model.memory_storage()
-            print_fsdp_wrapping(model)
+            # print_fsdp_wrapping(model)
             print(f"Model memory size: {model_mem_required:,} bytes")
         except:
             print("No model memory storage available")
         
         print("Model layers:", model)
 
+    for i in model.named_parameters():
+        print(f"{i[0]} -> {i[1].device}")
+    print("FSDP Layers printed")
+
     model = FSDP(model,
-        use_orig_params=world_size > 1,
+        use_orig_params=True,
         # auto_wrap_policy=my_auto_wrap_policy,
         # cpu_offload=CPUOffload(offload_params=True)
     )
+
     # model.embedding = FSDP(model.embedding, use_orig_params=True) 
 
     lr = float(training_params["learning_rate"]) / training_params["batch_size"]
@@ -142,8 +161,8 @@ def train_llm_pipeline(rank, world_size, args):
     
     lr_scheduler = StepLR(opt, step_size=training_params["step_size"], gamma=training_params["gamma"])
 
-    loss_mask = torch.ones(vocab_size)
-
+    loss_mask = torch.ones(vocab_size).to(rank)
+    
     for index in [tokenizer.bos_token_id, tokenizer.eos_token_id, tokenizer.pad_token_id]:
         loss_mask[index] = 0
 
@@ -156,8 +175,6 @@ def train_llm_pipeline(rank, world_size, args):
     # scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
     # init_start_event.record()
     
-    torch.cuda.set_per_process_memory_fraction(0.9, device=rank)
-    torch.backends.cudnn.benchmark = True
     free_memory = get_cuda_allocation(verbose=args.verbose)
 
     if args.verbose and False:
@@ -168,7 +185,7 @@ def train_llm_pipeline(rank, world_size, args):
     
     eval_task = EvalTask(tokenizer=tokenizer)
 
-    csv_path = data_params["uq_path"] + f".{params['model']['name']}"
+    csv_path = data_params["uq_path"] + f".{model_params['name']}"
     csv_object = InputCSV(
         model=model, 
         path=csv_path,
@@ -184,8 +201,8 @@ def train_llm_pipeline(rank, world_size, args):
         rank=rank,
         world_size=world_size,
         eval_task=eval_task,
-        name=params["model"]["name"],
-        model_dir=params["model"]["dir"],
+        name=model_params["name"],
+        model_dir=model_params["dir"],
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.pad_token_id,

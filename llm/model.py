@@ -47,60 +47,87 @@ class PositionalEncoding(nn.Module):
         pe = pe.unsqueeze(0) 
         self.register_buffer('pe', pe, persistent=True)
 
-    def forward(self, x):
-        pe = self.pe[:,:x.size(1), :].to(x.device)
-        assert not torch.isnan(x).any(), "NaN detected in x"
-        assert not torch.isinf(x).any(), "Inf detected in x"
-        assert not torch.isnan(pe).any(), "NaN detected in pe"
-        assert not torch.isinf(pe).any(), "Inf detected in pe"
 
-        x = x + self.pe[:,:x.size(1), :].to(x.device)
+class DecoderBlock(nn.Module):
+    def __init__(self, model_size, nhead, dim_ffn, dropout=0.1):
+        super().__init__()
+        self.self_attn = nn.MultiheadAttention(model_size, nhead, dropout=dropout, batch_first=True)
+        self.ln1 = nn.LayerNorm(model_size)
+        self.ff = nn.Sequential(
+            nn.Linear(model_size, dim_ffn),
+            nn.GELU(),
+            nn.Linear(dim_ffn, model_size)
+        )
+        self.ln2 = nn.LayerNorm(model_size)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, mask=None):
+        attn_output, _ = self.self_attn(x, x, x, attn_mask=mask)
+        x = self.ln1(x + self.dropout(attn_output))
+
+        ff_output = self.ff(x)
+        x = self.ln2(x + self.dropout(ff_output))  
+        
         return x
-    
+
+class LLM(nn.Module):
+    def __init__(
+            self, 
+            vocab_size: int, 
+            model_size: int,
+            dim_ffn: int,
+            max_seq_len: int,
+            nhead: int,
+            num_layers: int,
+            padding_idx: int = None,
+            dropout: float = 0.1
+        ):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.nhead = nhead
+        self.token_embedding = nn.Embedding(vocab_size, model_size)
+        self.position_embedding = PositionalEncoding(d_model=model_size, max_len=max_seq_len)
+        self.layers = nn.ModuleList([DecoderBlock(model_size, nhead, dim_ffn, dropout) for _ in range(num_layers)])
+        self.ln_final = nn.LayerNorm(model_size)
+        self.output_layer = nn.Linear(model_size, vocab_size)
+
+    def forward(self, input_ids, starting_pos):
+        """
+        input_ids: (batch_size, seq_len) - tokenized input sequence
+        starting_pos: (batch_size,) - position at which generation should start
+        """
+        batch_size, seq_len = input_ids.shape
+        device = input_ids.device
+
+        x = self.token_embedding(input_ids) + self.position_embedding.pe[:, :seq_len, :].to(input_ids.device) 
+
+        # mask = torch.tril(torch.ones(seq_len, seq_len, device=device)).unsqueeze(0)
+        # mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+
+        mask = torch.full((batch_size, seq_len), float('-inf'), device=device)
+
+        for i in range(batch_size):
+            mask[i, starting_pos[i]:] = 0.0 
+
+        # Expand to (batch_size, seq_len, seq_len) for self-attention
+        mask = mask.unsqueeze(1).expand(batch_size, self.nhead, seq_len, seq_len)  
+        mask = mask.flatten(0, 1) 
+
+        for layer in self.layers:
+            print("x.shape", x.shape)
+            print("mask.shape", mask.shape)
+            x = layer(x, mask)
+
+        x = self.ln_final(x)
+        logits = self.output_layer(x) 
+
+        for i in range(batch_size):
+            logits[i, :starting_pos[i], :] = float('-inf')  
+
+        return logits
 
 
-# class DecoderOnlyLLM(Module):
-#     def __init__(
-#             self, 
-#             vocab_size: int = VOCAB_SIZE, 
-#             model_size: int = DIM_MODEL,
-#         ):
-#         super(LLM, self).__init__()
-
-#         self.embedding = nn.Embedding(vocab_size, model_size)
-#         self.pos_enc = PositionalEncoding(d_model=model_size)
-
-#         decoder_layer = nn.TransformerDecoderLayer(d_model=model_size, nhead=8)
-#         self.main = nn.TransformerDecoder(decoder_layer, num_layers=6)
-        
-#         self.fc = nn.Linear(model_size, vocab_size)
-#         self.softmax = nn.Softmax(dim=-1)
-#         self.init_weights()
-    
-#     def init_weights(self):
-#         for p in self.parameters():
-#             if p.dim() > 1:
-#                 nn.init.normal_(self.weight, mean=0.0, std=0.02)
-            
-#     def forward(self, tgt, memory):
-#         tgt = self.embedding(tgt)
-#         tgt = tgt + self.pos_enc(tgt)
-        
-#         memory = self.embedding(memory)
-#         memory = memory + self.pos_enc(memory)
-
-#         out = self.main(tgt, memory)
-#         out = self.fc(out)
-#         out = self.softmax(out)
-#         return out
-    
-        # decoder_layer = nn.TransformerDecoderLayer(d_model=model_size, nhead=8)
-        # self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=6)
-        
-        # encoder_layer = nn.TransformerEncoderLayer(d_model=model_size, nhead=8)
-        # self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
-    
-class LLM(Module):
+class LLM_O(Module):
     def __init__(
             self, 
             vocab_size: int, 
@@ -129,7 +156,7 @@ class LLM(Module):
             num_layers=num_layers,
         )
         self.max_seq_len = max_seq_len
-        self.fc = nn.Linear(model_size, vocab_size, dropout=dropout)
+        self.fc = nn.Linear(model_size, vocab_size)
         self.softmax = nn.Softmax(dim=-1)
         self.init_weights()
         self.save_shapes()
@@ -139,60 +166,26 @@ class LLM(Module):
             if p.dim() > 1:
                 nn.init.normal_(p, mean=0.0, std=0.02)
 
-    def forward(self, seq: torch.Tensor, start_pos: int):
-        assert seq.min() >= 0, "Embedding input contains negative indices!"
-        assert seq.max() < self.embedding.num_embeddings, f"Embedding input exceeds dictionary size! Found size: {seq.max()} which is >= {self.embedding.num_embeddings} instead of strictly lower"
+    def forward(self, x: torch.Tensor, start_pos: int):
+        assert x.min() >= 0, "Embedding input contains negative indices!"
+        assert x.max() < self.embedding.num_embeddings, f"Embedding input exceeds dictionary size! Found size: {x.max()} which is >= {self.embedding.num_embeddings} instead of strictly lower"
     
-        _, seq_len = seq.shape
-        seq_emb = self.embedding(seq) + self.pos_enc(seq)  
+        _, x_len = x.shape
+        x_emb = self.embedding(x) + self.pos_enc.pe[:, :x_len, :].to(x.device) 
         
-        mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1)
-        mask[:, :start_pos] = float('-inf')   
-
+        mask = torch.triu(torch.ones(x_len, x_len), diagonal=1)
+        mask[:, :start_pos] = float('-inf')  
+         
         output = self.main(
-            tgt=seq_emb, 
-            memory=seq, 
+            tgt=x_emb, 
+            memory=x, 
             tgt_mask=mask
         )
         output = self.fc(output) 
         return output
 
-    # def generate(self, src: torch.Tensor, tokenizer, repetition_penalty = 1.2, beam_width=3, len_answer=16, retrieve_probs=False):
-    #     """Performs beam search decoding."""
-    #     self.eval()
-    #     with torch.no_grad():
-    #         batch_size = src.shape[0]
-    #         beams = [(torch.full((batch_size, 1), tokenizer.bos_token_id, device=src.device), 0)] 
-    #         rep_penalty_processor = RepetitionPenaltyProcessor(repetition_penalty)
-    #         generated = torch.full((batch_size, len_answer), tokenizer.pad_token_id, device=src.device) 
-    #         probabilities = torch.zeros((batch_size, len_answer, self.vocab_size), device=src.device) if retrieve_probs else None
-
-    #         for t in range(len_answer):
-    #             candidates = []
-    #             for seq, score in beams:
-    #                 logits = self(src, seq, has_mask=True)[:, -1, :] 
-
-    #                 logits = rep_penalty_processor(seq, logits)
-    #                 probs = F.log_softmax(logits, dim=-1)
-    #                 if retrieve_probs:
-    #                     probabilities[:, t] = probs
-    #                 top_k_probs, top_k_indices = probs.topk(beam_width, dim=-1) 
-
-    #                 for i in range(beam_width):
-    #                     new_seq = torch.cat([seq, top_k_indices[:, i].unsqueeze(-1)], dim=1)
-    #                     new_score = score + top_k_probs[:, i].sum().item()
-    #                     candidates.append((new_seq, new_score))
-                
-    #             beams = sorted(candidates, key=lambda x: x[1], reverse=True)[:beam_width]
-    #             best_seq = beams[0][0][:, 1:]
-
-    #             generated[:, t] = best_seq[:, -1] 
-
-    #             if (best_seq[:, -1] == tokenizer.eos_token_id).all():
-    #                 break
-
-    #     return generated
     
+    @torch.inference_mode()
     def generate(self, src: torch.Tensor, tokenizer, repetition_penalty = 1.2, beam_width=3, len_answer=16, retrieve_probs=False):
         """Performs beam search decoding."""
         self.eval()

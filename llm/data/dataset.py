@@ -4,7 +4,7 @@ import datasets
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from typing import Any, Tuple, Union
+from typing import Any, Tuple, Union, List
 
 
 class FinQADataset(Dataset):
@@ -19,22 +19,11 @@ class FinQADataset(Dataset):
         ) -> None:
         self.data = data
         self.tokenizer = tokenizer
+        self.max_length = max_length
         self.max_q_len = max_q_length - max_a_length if max_q_length else max_length - max_a_length
         self.max_a_len = max_a_length if max_a_length else max_length
         
-        # self.pad_token_id = tokenizer.pad_token_id
-        # self.q_token_id = tokenizer.special_tokens[CONTROL_TOKENS.start_of_text]
         self.short_answer = short_answer
-        # questions = [ tokenizer.encode(question) for question in data["question"]]
-        # answers = [ tokenizer.encode(answer) for answer in data["answer"]]
-
-        # max_len = max([len(q) for q in questions] + [len(a) for a in answers])
-        
-        # # TODO: USE torch.nn.utils.rnn.pad_sequence instead
-        # # https://pytorch.org/docs/stable/generated/torch.nn.utils.rnn.pad_sequence.html
-        # self.questions = torch.Tensor([ q + [tokenizer.special_tokens[CONTROL_TOKENS.padding]] * (max_len - len(q)) for q in questions ])
-        # self.answers = torch.Tensor([ a + [tokenizer.special_tokens[CONTROL_TOKENS.padding]] * (max_len - len(a)) for a in answers ])
-        # self.max_content = max_len
 
     def __len__(self):  
         return len(self.data)
@@ -53,7 +42,7 @@ class FinQADataset(Dataset):
 
         # PREPARE ANSWER
         if self.short_answer:
-            answer = data["answer"] or data["final_result"] # if data["answer"] else 
+            answer = data["answer"] or data["final_result"] 
         else:
             answer = data["gold_inds"]
             while type(answer) == list:
@@ -75,18 +64,22 @@ class FinQADataset(Dataset):
             answer += f"{CONTROL_TOKENS.start_of_program}{program}{CONTROL_TOKENS.end_of_program}"
         answer += f"{CONTROL_TOKENS.end_of_text}"
 
-        # if not self.tokenize:
-        #     # return question[-self.max_q_len:], answer[-self.max_a_len:]
-        #     return question, answer
         # TOKENIZE THEM
-        input_ids = self.tokenizer(question, padding='max_length', 
-                               max_length=self.max_q_len, return_tensors=True)
+        input_ids = self.tokenizer(question, padding='none', return_tensors=True)
         
-        labels = self.tokenizer(answer, padding='max_length', 
-                               max_length=self.max_a_len, return_tensors=True)
-        seq = torch.cat([input_ids, labels]).squeeze(0).long()
-        print("seq.device",seq.device)
-        return seq 
+        start_pos = torch.tensor(len(input_ids)).cpu()
+        labels = self.tokenizer(answer, padding='none', return_tensors=True)
+
+        seq = torch.cat([input_ids, labels])
+        seq = self.pad_sequence(seq).squeeze(0).cpu()
+        return seq, start_pos
+    
+    def pad_sequence(self, token_ids: torch.Tensor) -> torch.Tensor:
+        if len(token_ids) < self.max_length:
+            pad_tokens = torch.tensor([self.tokenizer.pad_token_id] * (self.max_length - len(token_ids)), dtype=torch.long)
+            return torch.cat([token_ids, pad_tokens])
+        else:
+            return token_ids[-self.max_length:]
   
 def get_data(
         tokenizer: Tokenizer,
