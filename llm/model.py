@@ -70,7 +70,7 @@ class DecoderBlock(nn.Module):
         
         return x
 
-class LLM(nn.Module):
+class LLM(Module):
     def __init__(
             self, 
             vocab_size: int, 
@@ -103,7 +103,6 @@ class LLM(nn.Module):
 
         # mask = torch.tril(torch.ones(seq_len, seq_len, device=device)).unsqueeze(0)
         # mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-
         
         mask = torch.full((batch_size, seq_len, seq_len), float('-inf'), device=device)
         for i in range(batch_size):

@@ -3,6 +3,10 @@ model:
   type: "torch"
   tokenizer: "gpt2"
   config:
+    # num_layers: 12
+    # model_size: 512
+    # dim_ffn: 1024
+    # nhead: 16
     num_layers: 8
     model_size: 512
     dim_ffn: 1024
@@ -13,8 +17,8 @@ model:
   dir: "MODEL_DIR"
 
 training:
-  batch_size: 16
-  test_batch_size: 16
+  batch_size: 4
+  test_batch_size: 4
   epochs: 3000
   learning_rate: 1e-4
   step_size: 20

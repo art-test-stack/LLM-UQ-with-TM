@@ -3,7 +3,8 @@ from tm_data.preprocessing import InputCSV
 from llm.utils import EarlyStopping
 from llm.model import LLM
 
-import os
+from utils import get_cuda_allocation
+
 
 import torch
 from torch import nn, optim
@@ -86,13 +87,21 @@ class ParallelTrainer:
 
         early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
 
+        get_cuda_allocation(verbose=True)
+        print("Start training")
         with tqdm(range(epochs), unit="epoch", disable=not verbose or not self.rank==0) as tepoch:
             for epoch in tepoch:
+
+                print("RANK:", self.rank)
+                # get_cuda_allocation(verbose=True)
+                # print(torch.cuda.memory_summary(device=0, abbreviated=False))
                 self.csv_object.update_hyperparameters(epoch, batch_size)
 
                 if "sampler" in train_kwargs.keys():
                     train_kwargs["sampler"].set_epoch(epoch)
+                print("Start training loop at epoch", epoch)
                 train_loss = self._train_epoch(train_loader)
+                print("Start validation loop at epoch", epoch)
                 val_loss = self._val_epoch(val_loader)
                 self.lr_scheduler.step()
                 
@@ -118,6 +127,7 @@ class ParallelTrainer:
                 if early_stopping.early_stop:
                     print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}") if self.rank == 0 else None
                     break
+                break
                 
             tepoch.set_postfix(
                 loss = history["train_loss"][-1],
@@ -140,19 +150,25 @@ class ParallelTrainer:
 
         for i, (seq, start_pos) in enumerate(train_loader):
             assert not torch.isnan(seq).any(), "NaN found in sources!"
+            print("Put seq on rank", self.rank)
             seq = seq.to(self.rank)
+            print("seq on rank", self.rank)
             output = self.model(seq, start_pos)
+            print("output generated:", output)
             loss = self.criterion(output.view(-1, output.size(-1)), seq.view(-1))
             loss.backward()
+
+            self.csv_object.update_model()
             if (i + 1) % accumulation_steps == 0:
                 if self.rank == 0 or True:
-                    self.csv_object.update_model()
+                    pass
                 self.optimizer.step()
                 self.optimizer.zero_grad()
                 self.model.zero_grad()
             # self.optimizer.step()
             ddp_loss[0] += loss.item()
             ddp_loss[1] += seq.size(0) * seq.size(1)
+            break
             
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         test_loss = ddp_loss[0] / ddp_loss[1]
@@ -202,6 +218,8 @@ class ParallelTrainer:
 
                     generated[active_batches, i+1] = next_token  
                 self.eval_task.update(refs=seq, preds=generated)
+
+                break
         return ddp_loss[0] / ddp_loss[1] if ddp_loss[1] > 0 else 0
 
     @DeprecationWarning

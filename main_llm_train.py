@@ -1,5 +1,4 @@
-from archives.main_llm import main_train
-from pipeline_train_llm import train_llm_pipeline
+from llm.pipeline_train import train_llm_pipeline
 
 import torch
 import torch.multiprocessing as mp
@@ -39,13 +38,18 @@ if __name__=="__main__":
     # from utils import get_device
     # torch.cuda.set_per_process_memory_fraction(1., device=get_device())
     # torch.backends.cudnn.benchmark = True
+    torch.cuda.empty_cache()
     if WORLD_SIZE == 0:
         print("No GPU available")
-        main_train(args)
-    elif WORLD_SIZE==1:
+    if WORLD_SIZE<=1:
+        print("WORLD SIZE = ", WORLD_SIZE)
         train_llm_pipeline(rank=0, world_size=1, args=args)
     else:
+        print("WORLD SIZE = ", WORLD_SIZE)
         try:
+            print("try mp spawn")
+
+            torch.multiprocessing.set_start_method("fork", force=True)
             mp.spawn(train_llm_pipeline,
                 args=(WORLD_SIZE, args),
                 nprocs=WORLD_SIZE,
