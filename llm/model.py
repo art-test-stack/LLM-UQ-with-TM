@@ -62,7 +62,7 @@ class DecoderBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, mask=None):
-        attn_output, _ = self.self_attn(x, x, x, attn_mask=mask)
+        attn_output, _ = self.self_attn(x, x, x, attn_mask=mask, is_causal=True)
         x = self.ln1(x + self.dropout(attn_output))
 
         ff_output = self.ff(x)
@@ -104,11 +104,21 @@ class LLM(Module):
         # mask = torch.tril(torch.ones(seq_len, seq_len, device=device)).unsqueeze(0)
         # mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         
+        # min_starting_pos = starting_pos.min().item()
+        # mask = torch.full((batch_size, seq_len, seq_len - min_starting_pos), float('-inf'), device=device)
+        # for i in range(batch_size):
+        #     mask[i, :, :] = torch.tril(torch.ones(seq_len, seq_len - min_starting_pos, device=device), diagonal=starting_pos[i])
+        #     mask[i, seq_len-starting_pos[i]:, :] = float('-inf')
+        # mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        # mask = mask.unsqueeze(1)
+        # mask = mask.expand(batch_size, self.nhead, seq_len, seq_len - min_starting_pos)  
+        # mask = mask.flatten(0, 1)
+
         mask = torch.full((batch_size, seq_len, seq_len), float('-inf'), device=device)
         for i in range(batch_size):
             mask[i, :, :] = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=starting_pos[i])
-            mask[i, seq_len-starting_pos[i]:, :] = float('-inf')
-        mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+            mask[i, seq_len-starting_pos[i] - 1:, :] = 0 # float('-inf')
+        mask = mask.masked_fill(mask == 0, True).masked_fill(mask == 1, False)
         mask = mask.unsqueeze(1)
         mask = mask.expand(batch_size, self.nhead, seq_len, seq_len)  
         mask = mask.flatten(0, 1)
@@ -116,11 +126,11 @@ class LLM(Module):
         for layer in self.layers:
             x = layer(x, mask)
 
+
         x = self.ln_final(x)
         logits = self.output_layer(x) 
-
-        for i in range(batch_size):
-            logits[i, :starting_pos[i], :] = float('-inf')  
+        # for i in range(batch_size):
+        #     logits[i, :starting_pos[i], :] = float('-inf')  
 
         return logits
 

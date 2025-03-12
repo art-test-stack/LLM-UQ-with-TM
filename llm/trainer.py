@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pickle
 
-class ParallelTrainer:
+class Trainer:
     def __init__(
             self,
             model: Union[Callable,FSDP,nn.Module],
@@ -91,17 +91,13 @@ class ParallelTrainer:
         print("Start training")
         with tqdm(range(epochs), unit="epoch", disable=not verbose or not self.rank==0) as tepoch:
             for epoch in tepoch:
-
-                print("RANK:", self.rank)
                 # get_cuda_allocation(verbose=True)
                 # print(torch.cuda.memory_summary(device=0, abbreviated=False))
                 self.csv_object.update_hyperparameters(epoch, batch_size)
 
                 if "sampler" in train_kwargs.keys():
                     train_kwargs["sampler"].set_epoch(epoch)
-                print("Start training loop at epoch", epoch)
                 train_loss = self._train_epoch(train_loader)
-                print("Start validation loop at epoch", epoch)
                 val_loss = self._val_epoch(val_loader)
                 self.lr_scheduler.step()
                 
@@ -150,11 +146,8 @@ class ParallelTrainer:
 
         for i, (seq, start_pos) in enumerate(train_loader):
             assert not torch.isnan(seq).any(), "NaN found in sources!"
-            print("Put seq on rank", self.rank)
             seq = seq.to(self.rank)
-            print("seq on rank", self.rank)
             output = self.model(seq, start_pos)
-            print("output generated:", output)
             loss = self.criterion(output.view(-1, output.size(-1)), seq.view(-1))
             loss.backward()
 

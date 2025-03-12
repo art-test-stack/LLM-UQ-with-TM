@@ -1,6 +1,6 @@
 from llm.data.dataset import get_data
 from llm.handlers.handler import model_handler
-from llm.trainer import ParallelTrainer
+from llm.trainer import Trainer
 from llm.eval import EvalTask
 
 from tm_data.preprocessing import InputCSV
@@ -210,7 +210,7 @@ def train_llm_pipeline(rank, world_size, args):
         world_size=world_size,
         eval_metrics=eval_task.result_keys
     )
-    trainer = ParallelTrainer(
+    trainer = Trainer(
         model,
         optimizer=opt,
         criterion=criterion,
