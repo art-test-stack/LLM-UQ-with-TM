@@ -38,18 +38,19 @@ class Tokenizer:
         ) -> None:
         assert model_name in tiktoken_models, f"'{model_name}' is not a provided model"
         self.model = tiktoken.encoding_for_model(model_name)
-        self.pat_str = self.model._pat_str
-        self.mergeable_ranks = self.model._mergeable_ranks
-        self.model._special_tokens = {}
-        self.model._core_bpe = _tiktoken.CoreBPE(self.mergeable_ranks, self.model._special_tokens, self.pat_str)
-        self.special_tokens = self.model._special_tokens
-        self._compute_vocab_size()
-        
+        self.model = tiktoken.Encoding(
+            name=self.model.name,
+            pat_str=self.model._pat_str,
+            mergeable_ranks=self.model._mergeable_ranks,
+            special_tokens=self.model._special_tokens,
+        )
         # LINE BELLOW VERY IMPORTANT FOR TIKTOKEN INIT BUT DO NOT KNOW WHY
         # IF NOT USED, THE SPECIAL TOKENS ARE NOT ADDED
         self.pad_token_id = 0 
 
         self.add_special_tokens([pad_token, bos_token, eos_token])
+
+        self._compute_vocab_size()
         self.pad_token_id = self.special_tokens[pad_token]
         self.bos_token_id = self.special_tokens[bos_token]
         self.eos_token_id = self.special_tokens[eos_token]
@@ -68,8 +69,7 @@ class Tokenizer:
         special_tokens = [str(special_token) for special_token in special_tokens if special_token not in self.model._special_tokens] 
         missing_token_idx = self._get_missing_idx()
         token_ids = missing_token_idx[:len(special_tokens)] if len(missing_token_idx) >= len(special_tokens) else missing_token_idx + list(range(self.model.n_vocab, self.model.n_vocab + len(special_tokens) - len(missing_token_idx)))
-        
-        special_tokens = {
+        special_tokens = self.model._special_tokens | {
             token: id
             for token, id in zip(special_tokens, token_ids)
         }
@@ -79,7 +79,8 @@ class Tokenizer:
             mergeable_ranks=self.model._mergeable_ranks,
             special_tokens=special_tokens,
         )
-        # self.model._core_bpe = _tiktoken.CoreBPE(self.mergeable_ranks, self.model._special_tokens, self.pat_str)
+        self.pat_str = self.model._pat_str
+        self.mergeable_ranks = self.model._mergeable_ranks
         self.special_tokens = self.model._special_tokens
         self._compute_vocab_size()
     
