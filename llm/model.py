@@ -101,18 +101,7 @@ class LLM(Module):
 
         x = self.token_embedding(input_ids) + self.position_embedding.pe[:, :seq_len, :].to(input_ids.device) 
 
-        # mask = torch.tril(torch.ones(seq_len, seq_len, device=device)).unsqueeze(0)
-        # mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-        
-        # min_starting_pos = starting_pos.min().item()
-        # mask = torch.full((batch_size, seq_len, seq_len - min_starting_pos), float('-inf'), device=device)
-        # for i in range(batch_size):
-        #     mask[i, :, :] = torch.tril(torch.ones(seq_len, seq_len - min_starting_pos, device=device), diagonal=starting_pos[i])
-        #     mask[i, seq_len-starting_pos[i]:, :] = float('-inf')
-        # mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-        # mask = mask.unsqueeze(1)
-        # mask = mask.expand(batch_size, self.nhead, seq_len, seq_len - min_starting_pos)  
-        # mask = mask.flatten(0, 1)
+        print("seq_len", seq_len)
         mask = None
         if seq_len > 1:
             mask = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=starting_pos-1)

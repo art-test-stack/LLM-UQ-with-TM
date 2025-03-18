@@ -1,30 +1,15 @@
-from llm.data.tokenizer import CONTROL_TOKENS
 from tm_data.preprocessing import InputCSV
+from llm.confidence import ConfidenceScore
 from llm.utils import EarlyStopping
-from llm.model import LLM
-
 from utils import get_cuda_allocation
 
 
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 import torch.distributed as dist
-import torch.multiprocessing as mp
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import FullStateDictConfig, StateDictType
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    CPUOffload,
-    BackwardPrefetch,
-)
-from torch.distributed.fsdp.wrap import (
-    size_based_auto_wrap_policy,
-    enable_wrap,
-    wrap,
-)
 from typing import Callable, Dict, Union
 from tqdm import tqdm
 from pathlib import Path
@@ -41,6 +26,7 @@ class Trainer:
             rank: torch.device,
             world_size: int,
             eval_task: Callable = None,
+            eval_confidence: Callable = None,
             name: str = "model",
             model_dir: str = "models/",
             lr_scheduler: optim.lr_scheduler = None,
@@ -67,6 +53,7 @@ class Trainer:
         self.start_pos = start_pos
         self.verbose = True
         self.eval_task = eval_task
+        self.eval_conf = eval_confidence or ConfidenceScore(device=self.rank)
 
     def fit(
             self, 
@@ -107,7 +94,7 @@ class Trainer:
                         "train": train_loss,
                         "test": val_loss
                     }
-                    self.csv_object(losses, self.eval_task.compute())
+                    self.csv_object(losses, self.eval_task.compute(), self.confidence_score.get())
 
                 history["train_loss"].append(train_loss)
                 history["test_loss"].append(val_loss)
@@ -178,11 +165,11 @@ class Trainer:
 
                 batch_size, seq_len = seq.shape
                 generated = seq.clone()  
-                
+                all_logits = torch.zeros((batch_size, seq_len - start_pos, self.model.vocab_size), device=self.rank)
                 for i in range(start_pos, seq_len): 
                     logits = self.model(seq[:, :i], start_pos)
                     logits = logits[:, -1, :] 
-
+                    all_logits[:, i - start_pos, :] = logits
                     vocab_size = logits.size(-1)
 
                     loss = self.criterion(logits.view(-1, vocab_size), seq[:,i].reshape(-1))
@@ -198,6 +185,7 @@ class Trainer:
 
                     generated[:, i] = next_token  
                 self.eval_task.update(refs=seq, preds=generated)
+                self.eval_conf.update(all_logits)
 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         test_loss = ddp_loss[0] / ddp_loss[1]

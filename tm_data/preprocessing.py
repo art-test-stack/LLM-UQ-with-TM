@@ -17,41 +17,13 @@ class GradStats:
     grad_max: float | None = None
     grad_min: float | None = None
 
-    # grad_alpha: float | None = None
-    # grad_beta: float | None = None
-
-    # spectrum_mean: float | None = None
-    # spectrum_median: float | None = None
-    # spectrum_std: float | None = None
-    # spectrum_max: float | None = None
-    # spectrum_min: float | None = None
-    # spectrum_alpha: float | None = None
-    # spectrum_beta: float | None = None
-
-    # grad_ll_mean: float | None = None
-    # grad_ll_median: float | None = None
-    # grad_ll_std: float | None = None
-    # grad_ll_max: float | None = None
-    # grad_ll_min: float | None = None
-
-    # grad_ll_alpha: float | None = None
-    # grad_ll_beta: float | None = None
-
-    # spectrum_ll_mean: float | None = None
-    # spectrum_ll_median: float | None = None
-    # spectrum_ll_std: float | None = None
-    # spectrum_ll_max: float | None = None
-    # spectrum_ll_min: float | None = None
-    # spectrum_ll_alpha: float | None = None
-    # spectrum_ll_beta: float | None = None
-
-
 @dataclass
 class InputData(GradStats):
     test_loss: float | None = None
     var_test_loss: float | None = None
     train_loss: float | None = None
     var_train_loss: float | None = None
+    confidence_score: float | None = None
     epoch: int | None = None
     batch_size: int | None = None
 
@@ -89,7 +61,7 @@ class InputCSV:
         )
         self.current = self.CurrentInput()
 
-    def __call__(self, losses, metrics) -> None:
+    def __call__(self, losses, metrics, confidence_score) -> None:
         assert self.current.batch_size, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
         assert self.current.epoch or self.current.epoch == 0, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
 
@@ -105,6 +77,7 @@ class InputCSV:
             "test_loss": losses["test"],
             "train_loss": losses["train"]
         }
+        self.current.confidence_score = confidence_score
         self.compute_grad_stats()
         # add a way to store loss variations
         self.compute_model_stats()
