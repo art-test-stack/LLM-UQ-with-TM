@@ -149,7 +149,7 @@ class Trainer:
                 self.model.zero_grad()
             # self.optimizer.step()
             ddp_loss[0] += loss.item()
-            ddp_loss[1] += seq.size(0) * seq.size(1)
+            ddp_loss[1] += labels.size(0)
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         torch.cuda.empty_cache()
         train_loss = ddp_loss[0] / ddp_loss[1]
@@ -163,20 +163,21 @@ class Trainer:
             for seq in val_loader:
                 assert not torch.isnan(seq).any(), "NaN found in sources!"
                 seq = seq.to(self.rank)
-
+                
                 batch_size, seq_len = seq.shape
                 generated = seq.clone()  
                 all_logits = torch.zeros((batch_size, seq_len - start_pos, self.model.vocab_size), device=self.rank)
                 for i in range(start_pos, seq_len): 
                     logits = self.model(seq[:, :i], start_pos)
+                    labels = seq[:,i].reshape(-1)
                     logits = logits[:, -1, :] 
                     all_logits[:, i - start_pos, :] = logits
                     vocab_size = logits.size(-1)
 
-                    loss = self.criterion(logits.view(-1, vocab_size), seq[:,i].reshape(-1))
+                    loss = self.criterion(logits.view(-1, vocab_size), labels)
                     
                     ddp_loss[0] += loss.item()
-                    ddp_loss[1] += seq[:,i].numel()
+                    ddp_loss[1] += labels.numel()
 
                     if mode == "greedy":
                         next_token = logits.argmax(dim=-1)
