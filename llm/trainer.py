@@ -94,7 +94,7 @@ class Trainer:
                         "train": train_loss,
                         "test": val_loss
                     }
-                    self.csv_object(losses, self.eval_task.compute(), self.confidence_score.get())
+                    self.csv_object(losses, self.eval_task.compute(), self.eval_conf.get())
 
                 history["train_loss"].append(train_loss)
                 history["test_loss"].append(val_loss)
@@ -134,9 +134,10 @@ class Trainer:
         for i, seq in enumerate(train_loader):
             assert not torch.isnan(seq).any(), "NaN found in sources!"
             seq = seq.to(self.rank)
-            output = self.model(seq, start_pos)
+            labels = seq[:,start_pos:].reshape(-1)
+            output = self.model(seq, start_pos)[:,start_pos:]
             
-            loss = self.criterion(output.view(-1, output.size(-1)), seq.view(-1))
+            loss = self.criterion(output.reshape(-1, output.size(-1)), labels)
             loss.backward()
 
             self.csv_object.update_model()

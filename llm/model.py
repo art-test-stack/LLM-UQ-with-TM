@@ -101,14 +101,11 @@ class LLM(Module):
 
         x = self.token_embedding(input_ids) + self.position_embedding.pe[:, :seq_len, :].to(input_ids.device) 
 
-        print("seq_len", seq_len)
         mask = None
         if seq_len > 1:
             mask = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=starting_pos-1)
             mask[seq_len - starting_pos + 1:,:] = torch.zeros(starting_pos - 1, seq_len, device=device)
             mask = mask.masked_fill(mask == 0, True).masked_fill(mask == 1, False)
-
-            
 
         for layer in self.layers:
             x = layer(x, mask)
