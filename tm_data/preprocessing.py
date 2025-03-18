@@ -73,8 +73,10 @@ class InputCSV:
         self.init_data()
         self.world_size = world_size
         self.last_layers = None
+        print("Look for csv at", self.path)
         if not self.path.exists():
             self.create_csv(self.path)
+            print("CSV created at:", self.path)
 
     def init_data(self, last_values: Union[Dict[str,float], None] = None) -> None:
         self.clean_grads()

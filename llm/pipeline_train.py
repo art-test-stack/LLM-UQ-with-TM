@@ -67,21 +67,6 @@ def print_fsdp_wrapping(module, prefix=""):
 def train_llm_pipeline(rank, world_size, args):
     print("rank", rank)
     setup(rank, world_size)
-    # setup_ok = False
-    # i = 12355
-    # while not setup_ok:
-    #     try:
-    #         setup(rank, world_size, str(i))
-    #         setup_ok = True
-    #         print(f"setup on MASTER_PORT {i}")
-    #     except:
-    #         i += 1
-
-    #         if i > 12400:
-    #             raise IndexError
-    
-    # torch.cuda.set_per_process_memory_fraction(1., device=rank)
-    # torch.backends.cudnn.benchmark = True
 
     with open(args.params_file, "r") as file:
         params = yaml.safe_load(file)
@@ -99,11 +84,11 @@ def train_llm_pipeline(rank, world_size, args):
     dataset_params = {
         "tokenizer": tokenizer,
         "max_length": model_params["config"]["max_seq_len"],
-        # "max_q_length": model_params["config"]["max_seq_len"], # TODO: TEMPORARY
         "max_a_length": 8, # TODO: TEMPORARY
         **data_params
     }
     start_pos = dataset_params["max_length"] - dataset_params["max_a_length"]
+
     print("Load FinQADataset...")
     train, test, val = get_data(**dataset_params)
     
@@ -118,16 +103,11 @@ def train_llm_pipeline(rank, world_size, args):
         'pin_memory': True,
         # 'shuffle': True
     }
-    
     train_kwargs.update(cuda_kwargs)
     test_kwargs.update(cuda_kwargs)
     print("FinQADataset loaded!")
-    my_auto_wrap_policy = functools.partial(
-        size_based_auto_wrap_policy, min_num_params=100
-    )
-
+    
     vocab_size = tokenizer.get_vocab_size()
-    # max_content = max(train.max_q_len, val.max_a_len)
 
     if args.verbose:
         try:
@@ -151,19 +131,10 @@ def train_llm_pipeline(rank, world_size, args):
 
     for i in model.named_parameters():
         print(f"{i[0]} -> {i[1].device}")
+
     print("FSDP Layers printed")
     torch.cuda.set_device(rank)
     print("Load FSDP wrapper...")
-    # model = fully_shard(
-    #     model,
-    #     # use_orig_params=False,
-    #     # sync_module_states=True,
-    #     # sharding_strategy=ShardingStrategy.FULL_SHARD
-    #     # state_dict_config=FullStateDictConfig(offload_to_cpu=False, rank0_only=False),
-    #     # optim_state_dict_config=FullOptimStateDictConfig(offload_to_cpu=False, rank0_only=False),
-    #     # auto_wrap_policy=my_auto_wrap_policy,
-    #     # cpu_offload=CPUOffload(offload_params=True)
-    # )
     transformer_auto_wrapper_policy = functools.partial(
         transformer_auto_wrap_policy,
         transformer_layer_cls={
@@ -177,8 +148,7 @@ def train_llm_pipeline(rank, world_size, args):
         device_id=torch.cuda.current_device(),
     )
     print("FSDP model", model)
-    print("Memory summary", torch.cuda.memory_summary(device=0, abbreviated=False))   
-    # model.embedding = FSDP(model.embedding, use_orig_params=True) 
+    print("Memory summary", torch.cuda.memory_summary(device=rank, abbreviated=False))
     print("FSDP wrapper loaded!")
     lr = float(training_params["learning_rate"]) / training_params["batch_size"]
     optim_params = {
@@ -207,8 +177,6 @@ def train_llm_pipeline(rank, world_size, args):
         ignore_index=tokenizer.pad_token_id,
         reduction="sum"
     )
-    # scheduler = StepLR(opt, step_size=1, gamma=args.gamma)
-    # init_start_event.record()
     
     free_memory = get_cuda_allocation(verbose=args.verbose)
 
@@ -220,7 +188,7 @@ def train_llm_pipeline(rank, world_size, args):
     
     eval_task = EvalTask(tokenizer=tokenizer)
 
-    csv_path = os.getenv(data_params["uq_path"]) + f".{model_params['name']}"
+    csv_path = os.getenv(data_params["uq_path"]) + f"_{model_params['name']}"
     print("CSV path:", csv_path)
     csv_object = InputCSV(
         model=model, 

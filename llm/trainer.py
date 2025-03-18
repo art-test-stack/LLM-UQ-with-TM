@@ -185,10 +185,10 @@ class Trainer:
 
                     vocab_size = logits.size(-1)
 
-                    loss = self.criterion(logits.view(-1, vocab_size), seq[:,:i])
+                    loss = self.criterion(logits.view(-1, vocab_size), seq[:,i].reshape(-1))
                     
                     ddp_loss[0] += loss.item()
-                    ddp_loss[1] += seq[:,:i].numel()
+                    ddp_loss[1] += seq[:,i].numel()
 
                     if mode == "greedy":
                         next_token = logits.argmax(dim=-1)
@@ -196,7 +196,7 @@ class Trainer:
                         probs = torch.softmax(logits, dim=-1)
                         next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
 
-                    generated[:, i+1] = next_token  
+                    generated[:, i] = next_token  
                 self.eval_task.update(refs=seq, preds=generated)
 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
