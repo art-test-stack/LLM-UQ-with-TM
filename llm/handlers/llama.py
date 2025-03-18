@@ -161,6 +161,7 @@ def llama_handler(params):
     
     model = llama_obj.model
     model.forward = llama_forward.__get__(model)
+    model = model.float()
     
     tknzr = llama_obj.tokenizer
     tokenizer = TokenizerHandler(tknzr)
