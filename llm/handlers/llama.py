@@ -2,6 +2,7 @@ from llm.data.tokenizer import CONTROL_TOKENS, CONTROL_TOKENS_LIST
 from utils import get_device
 
 from llama_models.llama3.reference_impl.generation import Llama
+from llama_models.llama3.reference_impl.model import TransformerBlock
 
 import fairscale.nn.model_parallel.initialize as fs_init
 
@@ -127,20 +128,13 @@ def llama_forward(self, src: torch.Tensor, start_pos: int):
     self.freqs_cis = self.freqs_cis.to(h.device)
     freqs_cis = self.freqs_cis[:seq_len] 
 
-    model_parallel_size = fs_init.get_model_parallel_world_size()
-    n_local_heads = self.params.n_heads // model_parallel_size
     mask = None
+
     if seq_len > 1:
-
-        mask = torch.full((_bsz, seq_len, seq_len), float('-inf'), device=device)
-        for i in range(_bsz):
-            mask[i, :, :] = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=start_pos[i])
-            mask[i, seq_len-start_pos[i]:, :] = float('-inf')
-
+        mask = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=start_pos-1)
+        mask[seq_len - start_pos + 1:,:] = torch.zeros(start_pos - 1, seq_len, device=device)
         mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-        mask = mask.unsqueeze(1)
-        mask = mask.expand(_bsz, n_local_heads, seq_len, seq_len) 
-
+        
         if mask.device.type == "mps":
             mask = torch.nan_to_num(mask, nan=0.0)
 
@@ -172,5 +166,5 @@ def llama_handler(params):
     tokenizer = TokenizerHandler(tknzr)
     tokenizer.add_control_tokens(CONTROL_TOKENS_LIST)
     print(tokenizer.decode(tokenizer("Does it work?", padding="None",return_tensors=False)))
-    return model, tokenizer
+    return model, tokenizer, TransformerBlock
 

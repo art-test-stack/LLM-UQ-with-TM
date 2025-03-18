@@ -91,7 +91,7 @@ class LLM(Module):
         self.ln_final = nn.LayerNorm(model_size)
         self.output_layer = nn.Linear(model_size, vocab_size)
 
-    def forward(self, input_ids, starting_pos):
+    def forward(self, input_ids: torch.Tensor, starting_pos: int):
         """
         input_ids: (batch_size, seq_len) - tokenized input sequence
         starting_pos: (batch_size,) - position at which generation should start
@@ -113,24 +113,19 @@ class LLM(Module):
         # mask = mask.unsqueeze(1)
         # mask = mask.expand(batch_size, self.nhead, seq_len, seq_len - min_starting_pos)  
         # mask = mask.flatten(0, 1)
+        mask = None
+        if seq_len > 1:
+            mask = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=starting_pos-1)
+            mask[seq_len - starting_pos + 1:,:] = torch.zeros(starting_pos - 1, seq_len, device=device)
+            mask = mask.masked_fill(mask == 0, True).masked_fill(mask == 1, False)
 
-        mask = torch.full((batch_size, seq_len, seq_len), float('-inf'), device=device)
-        for i in range(batch_size):
-            mask[i, :, :] = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=starting_pos[i])
-            mask[i, seq_len-starting_pos[i] - 1:, :] = 0 # float('-inf')
-        mask = mask.masked_fill(mask == 0, True).masked_fill(mask == 1, False)
-        mask = mask.unsqueeze(1)
-        mask = mask.expand(batch_size, self.nhead, seq_len, seq_len)  
-        mask = mask.flatten(0, 1)
+            
 
         for layer in self.layers:
             x = layer(x, mask)
 
-
         x = self.ln_final(x)
         logits = self.output_layer(x) 
-        # for i in range(batch_size):
-        #     logits[i, :starting_pos[i], :] = float('-inf')  
 
         return logits
 

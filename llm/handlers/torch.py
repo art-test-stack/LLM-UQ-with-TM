@@ -1,5 +1,5 @@
 from llm.data.tokenizer import Tokenizer, CONTROL_TOKENS_LIST
-from llm.model import LLM
+from llm.model import LLM, DecoderBlock
 
 
 def torch_handler(params):
@@ -16,4 +16,4 @@ def torch_handler(params):
     )
     # model.forward = forward.__get__(model)
     
-    return model, tokenizer
+    return model, tokenizer, DecoderBlock

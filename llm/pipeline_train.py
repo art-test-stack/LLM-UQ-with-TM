@@ -25,6 +25,11 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import (
     FullStateDictConfig,
     ShardingStrategy
 )
+from torch.distributed.fsdp.wrap import (
+    transformer_auto_wrap_policy,
+    enable_wrap,
+    wrap,
+)
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed.fsdp.wrap import (
     size_based_auto_wrap_policy,
@@ -86,7 +91,7 @@ def train_llm_pipeline(rank, world_size, args):
     data_params = params["data"]
 
     print("Load model and tokenizer...")
-    model, tokenizer = model_handler(model_params)
+    model, tokenizer, TransformerBlock = model_handler(model_params)
     print("Model and tokenizer loaded!")
     model = model.to(rank)
 
@@ -94,10 +99,11 @@ def train_llm_pipeline(rank, world_size, args):
     dataset_params = {
         "tokenizer": tokenizer,
         "max_length": model_params["config"]["max_seq_len"],
-        "max_q_length": model_params["config"]["max_seq_len"], # TODO: TEMPORARY
+        # "max_q_length": model_params["config"]["max_seq_len"], # TODO: TEMPORARY
         "max_a_length": 8, # TODO: TEMPORARY
         **data_params
     }
+    start_pos = dataset_params["max_length"] - dataset_params["max_a_length"]
     print("Load FinQADataset...")
     train, test, val = get_data(**dataset_params)
     
@@ -158,7 +164,18 @@ def train_llm_pipeline(rank, world_size, args):
     #     # auto_wrap_policy=my_auto_wrap_policy,
     #     # cpu_offload=CPUOffload(offload_params=True)
     # )
-
+    transformer_auto_wrapper_policy = functools.partial(
+        transformer_auto_wrap_policy,
+        transformer_layer_cls={
+            TransformerBlock,
+        },
+    )
+    model = FSDP(
+        model,
+        sharding_strategy=ShardingStrategy.FULL_SHARD,
+        auto_wrap_policy=transformer_auto_wrapper_policy,
+        device_id=torch.cuda.current_device(),
+    )
     print("FSDP model", model)
     print("Memory summary", torch.cuda.memory_summary(device=0, abbreviated=False))   
     # model.embedding = FSDP(model.embedding, use_orig_params=True) 
@@ -175,12 +192,13 @@ def train_llm_pipeline(rank, world_size, args):
         opt = optim.AdamW(model.parameters(), **optim_params)
     else:
         raise ValueError("Invalid optimizer")
+    
     print("Optimizer initialized")
     lr_scheduler = StepLR(opt, step_size=training_params["step_size"], gamma=training_params["gamma"])
 
     loss_mask = torch.ones(vocab_size).to(rank)
     
-    for index in [tokenizer.bos_token_id, tokenizer.eos_token_id, tokenizer.pad_token_id]:
+    for index in [tokenizer.pad_token_id]:
         loss_mask[index] = 0
 
     loss_mask = loss_mask.float().to(rank)
@@ -202,7 +220,7 @@ def train_llm_pipeline(rank, world_size, args):
     
     eval_task = EvalTask(tokenizer=tokenizer)
 
-    csv_path = data_params["uq_path"] + f".{model_params['name']}"
+    csv_path = os.getenv(data_params["uq_path"]) + f".{model_params['name']}"
     print("CSV path:", csv_path)
     csv_object = InputCSV(
         model=model, 
@@ -224,7 +242,7 @@ def train_llm_pipeline(rank, world_size, args):
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.pad_token_id,
-        len_answer=val.max_a_len
+        start_pos=start_pos
     )
     # Model checkpoint saving, by saving to the rank0 CPU
     # https://pytorch.org/tutorials/intermediate/FSDP_adavnced_tutorial.html#model-checkpoint-saving-by-streaming-to-the-rank0-cpu

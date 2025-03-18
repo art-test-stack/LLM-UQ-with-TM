@@ -11,13 +11,14 @@ echo "Number of nodes: $SLURM_JOB_NUM_NODES"
 echo "We are using $SLURM_CPUS_ON_NODE cores"
 echo "We are using $SLURM_CPUS_ON_NODE cores per node"
 echo "Total of $SLURM_NTASKS cores"
+# module load TensorFlow/2.11.0-foss-2022a-CUDA-11.7.0
 module avail Python
-module load TensorFlow/2.11.0-foss-2022a-CUDA-11.7.0
+module load Python/3.11.3-GCCcore-12.3.0
 source ${ENV_DIR}
 # module avail Python
 # module load Python/3.11.3-GCCcore-12.3.0
 # source ${ENV_DIR}
-# source ${PIP_DIR}
+source ${PIP_DIR}
 # Uncomment the following lines to install requirements
 pip install --upgrade pip 
 pip install -r requirements.txt

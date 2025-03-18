@@ -72,7 +72,7 @@ class FinQADataset(Dataset):
 
         seq = torch.cat([input_ids, labels])
         seq = seq.squeeze(0).cpu()
-        return seq, self.max_q_len + 1
+        return seq
 
 def pad_sequence(token_ids: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
     if len(token_ids) < max_length:

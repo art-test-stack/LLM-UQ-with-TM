@@ -47,7 +47,7 @@ class Trainer:
             bos_token_id: int = 0,
             eos_token_id: int = 0,
             pad_token_id: int = 0,
-            len_answer: int = 0,
+            start_pos: int = 0,
             **kwargs
         ) -> None:
         self.model = model
@@ -64,7 +64,7 @@ class Trainer:
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
-        self.len_answer = len_answer
+        self.start_pos = start_pos
         self.verbose = True
         self.eval_task = eval_task
 
@@ -95,6 +95,7 @@ class Trainer:
                 # print(torch.cuda.memory_summary(device=0, abbreviated=False))
                 self.csv_object.update_hyperparameters(epoch, batch_size)
 
+                torch.cuda.empty_cache()
                 if "sampler" in train_kwargs.keys():
                     train_kwargs["sampler"].set_epoch(epoch)
                 train_loss = self._train_epoch(train_loader)
@@ -123,7 +124,6 @@ class Trainer:
                 if early_stopping.early_stop:
                     print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}") if self.rank == 0 else None
                     break
-                break
                 
             tepoch.set_postfix(
                 loss = history["train_loss"][-1],
@@ -143,11 +143,12 @@ class Trainer:
     def _train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
-
-        for i, (seq, start_pos) in enumerate(train_loader):
+        start_pos = self.start_pos
+        for i, seq in enumerate(train_loader):
             assert not torch.isnan(seq).any(), "NaN found in sources!"
             seq = seq.to(self.rank)
             output = self.model(seq, start_pos)
+            
             loss = self.criterion(output.view(-1, output.size(-1)), seq.view(-1))
             loss.backward()
 
@@ -161,47 +162,33 @@ class Trainer:
             # self.optimizer.step()
             ddp_loss[0] += loss.item()
             ddp_loss[1] += seq.size(0) * seq.size(1)
-            break
-            
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
-        test_loss = ddp_loss[0] / ddp_loss[1]
-        return float(test_loss.cpu().numpy())
+        torch.cuda.empty_cache()
+        train_loss = ddp_loss[0] / ddp_loss[1]
+        return float(train_loss.cpu().numpy())
     
     def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)
-
+        start_pos = self.start_pos
         with torch.no_grad():
-            for seq, start_pos in val_loader:
+            for seq in val_loader:
                 assert not torch.isnan(seq).any(), "NaN found in sources!"
                 seq = seq.to(self.rank)
-                start_pos = start_pos.to(self.rank) 
 
                 batch_size, seq_len = seq.shape
                 generated = seq.clone()  
                 
-                batch_indices = torch.arange(batch_size, device=generated.device)
-                valid_mask = start_pos < seq_len  
-                valid_batches = batch_indices[valid_mask]
-                start_idxs = start_pos[valid_mask]
-
-                for i in range(seq_len - 1): 
-                    active_mask = (start_idxs <= i) & (i < seq_len - 1) 
-                    active_batches = valid_batches[active_mask]
-                    
-                    if active_batches.numel() == 0:
-                        continue 
-                    
-                    logits = self.model(generated[active_batches, :i+1], start_pos[active_batches] + i)
+                for i in range(start_pos, seq_len): 
+                    logits = self.model(seq[:, :i], start_pos)
                     logits = logits[:, -1, :] 
 
                     vocab_size = logits.size(-1)
-                    targets = seq[active_batches, i+1].view(-1)
 
-                    loss = self.criterion(logits.view(-1, vocab_size), targets)
+                    loss = self.criterion(logits.view(-1, vocab_size), seq[:,:i])
                     
                     ddp_loss[0] += loss.item()
-                    ddp_loss[1] += targets.numel()
+                    ddp_loss[1] += seq[:,:i].numel()
 
                     if mode == "greedy":
                         next_token = logits.argmax(dim=-1)
@@ -209,11 +196,13 @@ class Trainer:
                         probs = torch.softmax(logits, dim=-1)
                         next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
 
-                    generated[active_batches, i+1] = next_token  
+                    generated[:, i+1] = next_token  
                 self.eval_task.update(refs=seq, preds=generated)
 
-                break
-        return ddp_loss[0] / ddp_loss[1] if ddp_loss[1] > 0 else 0
+        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+        test_loss = ddp_loss[0] / ddp_loss[1]
+
+        return float(test_loss.cpu().numpy())
 
     @DeprecationWarning
     def _infer(self, seq, mode: str = "greedy"):
