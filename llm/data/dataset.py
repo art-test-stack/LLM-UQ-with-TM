@@ -13,15 +13,14 @@ class FinQADataset(Dataset):
             data: Any, 
             tokenizer: Tokenizer = None,
             max_length: int = 1024,
-            max_q_length: Union[int, None] = None,
-            max_a_length: Union[int, None] = None,
+            max_a_length: Union[int, None] = 8,
             short_answer: bool = True,
         ) -> None:
         self.data = data
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.max_q_len = max_q_length - max_a_length if max_q_length else max_length - max_a_length
-        self.max_a_len = max_a_length if max_a_length else max_length
+        self.max_q_len = max_length - max_a_length
+        self.max_a_len = max_a_length
         
         self.short_answer = short_answer
 
@@ -66,25 +65,25 @@ class FinQADataset(Dataset):
 
         # TOKENIZE THEM
         input_ids = self.tokenizer(question, padding='none', return_tensors=True)
-        
-        start_pos = torch.tensor(len(input_ids)).cpu()
+        input_ids = pad_sequence(input_ids, self.max_q_len, self.tokenizer.pad_token_id)
+
         labels = self.tokenizer(answer, padding='none', return_tensors=True)
+        labels = pad_sequence(labels, self.max_a_len, self.tokenizer.pad_token_id)
 
         seq = torch.cat([input_ids, labels])
-        seq = self.pad_sequence(seq).squeeze(0).cpu()
-        return seq, start_pos
-    
-    def pad_sequence(self, token_ids: torch.Tensor) -> torch.Tensor:
-        if len(token_ids) < self.max_length:
-            pad_tokens = torch.tensor([self.tokenizer.pad_token_id] * (self.max_length - len(token_ids)), dtype=torch.long)
-            return torch.cat([token_ids, pad_tokens])
-        else:
-            return token_ids[-self.max_length:]
+        seq = seq.squeeze(0).cpu()
+        return seq, self.max_q_len + 1
+
+def pad_sequence(token_ids: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
+    if len(token_ids) < max_length:
+        pad_tokens = torch.tensor([pad_token_id] * (max_length - len(token_ids)), dtype=torch.long)
+        return torch.cat([token_ids, pad_tokens])
+    else:
+        return token_ids[-max_length:]
   
 def get_data(
         tokenizer: Tokenizer,
         max_length: int = 1024,
-        max_q_length: Union[int, None] = None,
         max_a_length: Union[int, None] = None,
         short_answer: bool = True,
         **kwargs
@@ -98,7 +97,6 @@ def get_data(
     params = {
         "tokenizer": tokenizer,
         "max_length": max_length,
-        "max_q_length": max_q_length,
         "max_a_length": max_a_length,
         "short_answer": short_answer,
     }
