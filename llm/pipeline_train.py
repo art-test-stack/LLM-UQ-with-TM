@@ -165,8 +165,8 @@ def train_llm_pipeline(rank, world_size, args):
     # loss_mask = torch.ones(vocab_size).to(rank)
     # for index in [tokenizer.pad_token_id]:
     #     loss_mask[index] = 0
-
-    loss_mask = loss_mask.float().to(rank)
+    # loss_mask = loss_mask.float().to(rank)
+    
     loss_fn = nn.CrossEntropyLoss(
         # weight=loss_mask, 
         ignore_index=tokenizer.pad_token_id,

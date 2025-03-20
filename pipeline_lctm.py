@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Union
 
 
-def pipeline_lctm(csv_path: Union[str,Path] = "dataset/uq_features.csv"):
+def pipeline_lctm(csv_path: Union[str,Path] = "dataset/uq_big-model1.csv"):
     num_clauses_l = [8]
     T_l = [5]
     S_l = [100]
