@@ -17,11 +17,31 @@ from pathlib import Path
 import pickle
 
 class Trainer:
+    """
+    Trainer class for training the model.
+    
+    Args:
+        model: nn.Module, model to train
+        optimizer: optim.Optimizer, optimizer
+        loss_fn: nn.Module, loss function
+        csv_object: InputCSV, object to save the training history
+        rank: torch.device, rank of the process
+        world_size: int, number of processes
+        eval_task: Callable, evaluation task
+        eval_confidence: Callable, evaluation confidence
+        name: str, name of the model
+        model_dir: str, directory to save the model
+        lr_scheduler: optim.lr_scheduler, learning rate scheduler
+        bos_token_id: int, start of answer token
+        eos_token_id: int, end of answer token
+        pad_token_id: int, padding token
+        start_pos: int, start position of the sequence
+    """
     def __init__(
             self,
             model: Union[Callable,FSDP,nn.Module],
             optimizer: optim.Optimizer,
-            criterion: nn.Module,
+            loss_fn: nn.Module,
             csv_object: InputCSV,
             rank: torch.device,
             world_size: int,
@@ -39,7 +59,7 @@ class Trainer:
         self.model = model
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler or torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
-        self.criterion = criterion
+        self.loss_fn = loss_fn
         self.csv_object = csv_object
         self.rank = rank
         self.world_size = world_size
@@ -68,6 +88,21 @@ class Trainer:
             val_kwargs: Dict = {},
             **kwargs
         ) -> None:
+        """
+        Fit the model on the training set.
+        
+        Args:
+            train_set: Dataset, training dataset
+            val_set: Dataset, validation dataset
+            epochs: int, number of epochs
+            batch_size: int, batch size
+            patience: int, patience for early stopping
+            min_delta: float, minimum delta for early stopping
+            verbose: bool, verbosity
+            train_kwargs: Dict, kwargs for DataLoader of training set
+            val_kwargs: Dict, kwargs for DataLoader of validation set
+        """
+
         history = {"train_loss": [], "test_loss": []}
         train_loader = DataLoader(train_set, **train_kwargs)
         val_loader = DataLoader(val_set, **val_kwargs)
@@ -138,7 +173,7 @@ class Trainer:
 
             with torch.autocast(device_type=f"cuda", dtype=torch.float32):
                 output = self.model(seq, start_pos)[:,start_pos:]
-                loss = self.criterion(output.reshape(-1, output.size(-1)), labels)
+                loss = self.loss_fn(output.reshape(-1, output.size(-1)), labels)
 
             loss.backward()
             _sz = labels.size(0)
@@ -177,7 +212,7 @@ class Trainer:
                     all_logits[:, i - start_pos, :] = logits
                     vocab_size = logits.size(-1)
 
-                    loss = self.criterion(logits.view(-1, vocab_size), labels)
+                    loss = self.loss_fn(logits.view(-1, vocab_size), labels)
                     
                     ddp_loss[0] += loss.item()
                     ddp_loss[1] += labels.numel()
@@ -256,7 +291,7 @@ class Trainer:
     def evaluate(self, tgt, pred):
         self.model.eval()
         with torch.no_grad():
-            loss = self.criterion(pred.view(-1, pred.size(-1)), tgt.view(-1))
+            loss = self.loss_fn(pred.view(-1, pred.size(-1)), tgt.view(-1))
         return loss.item()
     
     def save_model(self, best: bool = False):
@@ -266,7 +301,7 @@ class Trainer:
         torch.save({
             'model_state_dict': self.model.state_dict(),
             # 'optimizer_state_dict': self.optimizer.state_dict(),
-            # 'loss': self.criterion
+            # 'loss': self.loss_fn
         }, path)
         # self.save_grads()
     
@@ -280,7 +315,7 @@ class Trainer:
             checkpoint = torch.load(self.path, weights_only=False, map_location=torch.device('cpu'))
         self.model.load_state_dict(checkpoint['model_state_dict'])
         # self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        # self.criterion.load_state_dict(checkpoint['loss'])
+        # self.loss_fn.load_state_dict(checkpoint['loss'])
         print(f"Model loaded from {path}!")
         return self.model
     
@@ -292,14 +327,14 @@ class Trainer:
         with FSDP.state_dict_type(self.model, StateDictType.FULL_STATE_DICT, save_policy):
             model_cpu_state = self.model.state_dict()
             # opt_cpu_state = self.optimizer.state_dict()
-            # loss_cpu_state = self.criterion
+            # loss_cpu_state = self.loss_fn
 
         if self.rank == 0:
         # save_name = file_save_name + "-" + time_of_run + "-" + currEpoch
             torch.save({
                 'model_state_dict': model_cpu_state, #self.model.state_dict(),
                 # 'optimizer_state_dict': opt_cpu_state, #self.optimizer.state_dict(),
-                # 'loss': self.criterion
+                # 'loss': self.loss_fn
             }, path)
         print("Model checkpoint saved!")
 

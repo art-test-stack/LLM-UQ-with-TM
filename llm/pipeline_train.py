@@ -1,5 +1,6 @@
 from llm.data.dataset import get_data
 from llm.handlers.handler import model_handler
+from llm.wrapper import fsdp_wrapper
 from llm.trainer import Trainer
 from llm.eval import EvalTask
 
@@ -64,10 +65,22 @@ def print_fsdp_wrapping(module, prefix=""):
             print(f"{full_name} is not wrapped with FSDP")
         print_fsdp_wrapping(child, full_name)
 
+
 def train_llm_pipeline(rank, world_size, args):
+    """
+    Train a model using the FinQA dataset
+    
+    Args:
+        rank: int, rank of the process
+        world_size: int, number of processes
+        args: argparse.ArgumentParser, command line arguments
+    """
+    
+    # Initialize the process group
     print("rank", rank)
     setup(rank, world_size)
 
+    # Load parameters
     with open(args.params_file, "r") as file:
         params = yaml.safe_load(file)
 
@@ -75,11 +88,13 @@ def train_llm_pipeline(rank, world_size, args):
     training_params = params["training"]
     data_params = params["data"]
 
-    print("Load model and tokenizer...")
+    # Load tokenizer and model
     model, tokenizer, TransformerBlock = model_handler(model_params)
-    print("Model and tokenizer loaded!")
     model = model.to(rank)
 
+    vocab_size = tokenizer.get_vocab_size()
+
+    # Load data
     # TODO: add to settings
     dataset_params = {
         "tokenizer": tokenizer,
@@ -107,7 +122,6 @@ def train_llm_pipeline(rank, world_size, args):
     test_kwargs.update(cuda_kwargs)
     print("FinQADataset loaded!")
     
-    vocab_size = tokenizer.get_vocab_size()
 
     if args.verbose:
         try:
@@ -115,10 +129,6 @@ def train_llm_pipeline(rank, world_size, args):
         except:
             print("No model summary available")
 
-    for name, param in model.named_parameters():
-        if torch.isnan(param).any() or torch.isinf(param).any():
-            print(f"NaN/Inf detected in parameter {name}")
-    
     if args.verbose:
         try:
             model_mem_required = model.memory_storage()
@@ -129,27 +139,12 @@ def train_llm_pipeline(rank, world_size, args):
         
         print("Model layers:", model)
 
-    for i in model.named_parameters():
-        print(f"{i[0]} -> {i[1].device}")
-
-    print("FSDP Layers printed")
     torch.cuda.set_device(rank)
-    print("Load FSDP wrapper...")
-    transformer_auto_wrapper_policy = functools.partial(
-        transformer_auto_wrap_policy,
-        transformer_layer_cls={
-            TransformerBlock,
-        },
-    )
-    model = FSDP(
-        model,
-        sharding_strategy=ShardingStrategy.FULL_SHARD,
-        auto_wrap_policy=transformer_auto_wrapper_policy,
-        device_id=torch.cuda.current_device(),
-    )
-    print("FSDP model", model)
-    print("Memory summary", torch.cuda.memory_summary(device=rank, abbreviated=False))
-    print("FSDP wrapper loaded!")
+    # Wrap the model with FSDP
+    # TODO: add DDP wrapper
+    model = fsdp_wrapper(model, TransformerBlock)
+
+    # Initialize optimizer
     lr = float(training_params["learning_rate"]) / training_params["batch_size"]
     optim_params = {
         "lr": lr,
@@ -164,30 +159,24 @@ def train_llm_pipeline(rank, world_size, args):
         raise ValueError("Invalid optimizer")
     
     print("Optimizer initialized")
+    # Initialize learning rate scheduler
     lr_scheduler = StepLR(opt, step_size=training_params["step_size"], gamma=training_params["gamma"])
 
     # loss_mask = torch.ones(vocab_size).to(rank)
-    
     # for index in [tokenizer.pad_token_id]:
     #     loss_mask[index] = 0
 
     loss_mask = loss_mask.float().to(rank)
-    criterion = nn.CrossEntropyLoss(
+    loss_fn = nn.CrossEntropyLoss(
         # weight=loss_mask, 
         ignore_index=tokenizer.pad_token_id,
         reduction="sum"
     )
     
-    free_memory = get_cuda_allocation(verbose=args.verbose)
+    get_cuda_allocation(verbose=args.verbose)
 
-    if args.verbose and False:
-        assert free_memory >= model_mem_required, f"""MEMORY ERROR: Free memory space is to small to store the model on cuda. Try to allocate more memory. 
-            Current rank: {rank}.
-            Free memory: {free_memory:,} bytes.
-            Memory required for the model: {model_mem_required:,} bytes"""
-    
+    # Initialize evaluation task and CSV object
     eval_task = EvalTask(tokenizer=tokenizer)
-
     csv_path = os.getenv(data_params["uq_path"]) + f"_{model_params['name']}"
     print("CSV path:", csv_path)
     csv_object = InputCSV(
@@ -196,10 +185,12 @@ def train_llm_pipeline(rank, world_size, args):
         world_size=world_size,
         eval_metrics=eval_task.result_keys
     )
+
+    # Initialize trainer
     trainer = Trainer(
         model,
         optimizer=opt,
-        criterion=criterion,
+        loss_fn=loss_fn,
         lr_scheduler=lr_scheduler,
         csv_object=csv_object,
         rank=rank,
@@ -220,6 +211,7 @@ def train_llm_pipeline(rank, world_size, args):
     except:
         print("No model found")
 
+    # Training loop
     if not args.skip_training:
         trainer.fit(
             train, 
