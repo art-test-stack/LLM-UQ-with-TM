@@ -135,21 +135,24 @@ class Trainer:
             assert not torch.isnan(seq).any(), "NaN found in sources!"
             seq = seq.to(self.rank)
             labels = seq[:,start_pos:].reshape(-1)
-            output = self.model(seq, start_pos)[:,start_pos:]
-            
-            loss = self.criterion(output.reshape(-1, output.size(-1)), labels)
-            loss.backward()
 
+            with torch.autocast(device_type=f"cuda", dtype=torch.float32):
+                output = self.model(seq, start_pos)[:,start_pos:]
+                loss = self.criterion(output.reshape(-1, output.size(-1)), labels)
+
+            loss.backward()
+            _sz = labels.size(0)
+            del seq, labels, output
             self.csv_object.update_model()
             if (i + 1) % accumulation_steps == 0:
                 if self.rank == 0 or True:
                     pass
                 self.optimizer.step()
-                self.optimizer.zero_grad()
+                self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()
             # self.optimizer.step()
             ddp_loss[0] += loss.item()
-            ddp_loss[1] += labels.size(0)
+            ddp_loss[1] += _sz
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         torch.cuda.empty_cache()
         train_loss = ddp_loss[0] / ddp_loss[1]
@@ -184,7 +187,7 @@ class Trainer:
                     else:
                         probs = torch.softmax(logits, dim=-1)
                         next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
-
+                    del logits, probs, 
                     generated[:, i] = next_token  
                 self.eval_task.update(refs=seq, preds=generated)
                 self.eval_conf.update(all_logits)

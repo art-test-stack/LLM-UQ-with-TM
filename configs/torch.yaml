@@ -17,8 +17,8 @@ model:
   dir: "MODEL_DIR"
 
 training:
-  batch_size: 4
-  test_batch_size: 4
+  batch_size: 16
+  test_batch_size: 16
   epochs: 3000
   learning_rate: 1e-4
   step_size: 20

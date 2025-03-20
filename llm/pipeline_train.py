@@ -166,14 +166,14 @@ def train_llm_pipeline(rank, world_size, args):
     print("Optimizer initialized")
     lr_scheduler = StepLR(opt, step_size=training_params["step_size"], gamma=training_params["gamma"])
 
-    loss_mask = torch.ones(vocab_size).to(rank)
+    # loss_mask = torch.ones(vocab_size).to(rank)
     
-    for index in [tokenizer.pad_token_id]:
-        loss_mask[index] = 0
+    # for index in [tokenizer.pad_token_id]:
+    #     loss_mask[index] = 0
 
     loss_mask = loss_mask.float().to(rank)
     criterion = nn.CrossEntropyLoss(
-        weight=loss_mask, 
+        # weight=loss_mask, 
         ignore_index=tokenizer.pad_token_id,
         reduction="sum"
     )
