@@ -1,5 +1,6 @@
 import evaluate
 
+import torch
 from typing import Callable, List
 
 
@@ -78,3 +79,19 @@ class EvalTask:
                     self.result_keys.append(f"{key}_{k}")
             else:
                 self.result_keys.append(key)
+
+def compute_accuracy(refs: torch.Tensor, preds: torch.Tensor):
+    acc = (preds.argmax(dim = -1) == preds).to(dtype = torch.float32).sum().item()
+    return acc / len(refs)
+
+def compute_f1(refs: torch.Tensor, preds: torch.Tensor):
+    vocab_size = preds.shape[-1]
+    refs = torch.nn.functional.one_hot(refs, num_classes=vocab_size)
+    preds = preds.argmax(dim=-1) 
+    tp = ((preds == 1) & (refs == 1)).sum().item()
+    fp = ((preds == 1) & (refs != 1)).sum().item()
+    fn = ((preds != 1) & (refs == 1)).sum().item()
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+    return f1

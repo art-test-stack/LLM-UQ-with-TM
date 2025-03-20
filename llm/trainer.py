@@ -1,6 +1,7 @@
 from tm_data.preprocessing import InputCSV
 from llm.confidence import ConfidenceScore
 from llm.utils import EarlyStopping
+from llm.eval import compute_accuracy, compute_f1
 from utils import get_cuda_allocation
 
 
@@ -14,6 +15,7 @@ from typing import Callable, Dict, Union
 from tqdm import tqdm
 from pathlib import Path
 
+import math
 import pickle
 
 class Trainer:
@@ -42,9 +44,9 @@ class Trainer:
             model: Union[Callable,FSDP,nn.Module],
             optimizer: optim.Optimizer,
             loss_fn: nn.Module,
-            csv_object: InputCSV,
             rank: torch.device,
             world_size: int,
+            csv_object: InputCSV = None,
             eval_task: Callable = None,
             eval_confidence: Callable = None,
             name: str = "model",
@@ -60,7 +62,6 @@ class Trainer:
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler or torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
         self.loss_fn = loss_fn
-        self.csv_object = csv_object
         self.rank = rank
         self.world_size = world_size
         self.name = name
@@ -72,8 +73,20 @@ class Trainer:
         self.pad_token_id = pad_token_id
         self.start_pos = start_pos
         self.verbose = True
+
+        self.csv_object = csv_object
         self.eval_task = eval_task
         self.eval_conf = eval_confidence or ConfidenceScore(device=self.rank)
+
+        self.history = {
+            "train_loss": [], 
+            "val_loss": [], 
+            "confidence": [], 
+            "accuracy_train": [], 
+            "accuracy_val": [],
+            "f1_train": [],
+            "f1_val": []
+        }
 
     def fit(
             self, 
@@ -103,7 +116,7 @@ class Trainer:
             val_kwargs: Dict, kwargs for DataLoader of validation set
         """
 
-        history = {"train_loss": [], "test_loss": []}
+        
         train_loader = DataLoader(train_set, **train_kwargs)
         val_loader = DataLoader(val_set, **val_kwargs)
 
@@ -115,7 +128,8 @@ class Trainer:
             for epoch in tepoch:
                 # get_cuda_allocation(verbose=True)
                 # print(torch.cuda.memory_summary(device=0, abbreviated=False))
-                self.csv_object.update_hyperparameters(epoch, batch_size)
+                if self.csv_object:
+                    self.csv_object.update_hyperparameters(epoch, batch_size)
 
                 torch.cuda.empty_cache()
                 if "sampler" in train_kwargs.keys():
@@ -124,17 +138,28 @@ class Trainer:
                 val_loss = self._val_epoch(val_loader)
                 self.lr_scheduler.step()
                 
+                confidence_score = math.exp(self.eval_conf.get())
                 if self.rank == 0:
                     losses = {
                         "train": train_loss,
                         "test": val_loss
                     }
-                    self.csv_object(losses, self.eval_task.compute(), self.eval_conf.get())
+                    if self.csv_object:
+                        self.csv_object(losses, self.eval_task.compute(), confidence_score)
 
-                history["train_loss"].append(train_loss)
-                history["test_loss"].append(val_loss)
+                self.history["train_loss"].append(train_loss)
+                self.history["val_loss"].append(val_loss)
+                self.history["confidence"].append(confidence_score)
 
-                tepoch.set_postfix(train_loss=train_loss, test_loss=val_loss)
+                tepoch.set_postfix(
+                    loss = self.history["train_loss"][-1],
+                    val_loss = self.history["val_loss"][-1],
+                    confidence = confidence_score,
+                    accuracy_train = self.history["accuracy_train"][-1],
+                    accuracy_val = self.history["accuracy_val"][-1],
+                    f1_train = self.history["f1_train"][-1],
+                    f1_val = self.history["f1_val"][-1],
+                )
 
                 early_stopping(val_loss)
                 if self.rank == 0 and early_stopping.save_model:
@@ -147,10 +172,6 @@ class Trainer:
                     print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}") if self.rank == 0 else None
                     break
                 
-            tepoch.set_postfix(
-                loss = history["train_loss"][-1],
-                test_loss = history["test_loss"][-1],
-            )
         # if self.rank == 0:
         #     self.save_model()
        
@@ -160,7 +181,7 @@ class Trainer:
             self.save_model()
             
         with open(self.model_dir / "history.pickle", 'wb') as handle:
-            pickle.dump(history, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self.history, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()
@@ -172,13 +193,18 @@ class Trainer:
             labels = seq[:,start_pos:].reshape(-1)
 
             with torch.autocast(device_type=f"cuda", dtype=torch.float32):
-                output = self.model(seq, start_pos)[:,start_pos:]
-                loss = self.loss_fn(output.reshape(-1, output.size(-1)), labels)
+                output = self.model(seq, start_pos)[:,start_pos:].reshape(-1, output.size(-1))
+                loss = self.loss_fn(output, labels)
+
+            self.history["accuracy_train"].append(compute_accuracy(labels, output))
+            self.history["f1_train"].append(compute_f1(labels, output))
 
             loss.backward()
             _sz = labels.size(0)
             del seq, labels, output
-            self.csv_object.update_model()
+
+            if self.csv_object:
+                self.csv_object.update_model()
             if (i + 1) % accumulation_steps == 0:
                 if self.rank == 0 or True:
                     pass
@@ -191,6 +217,7 @@ class Trainer:
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         torch.cuda.empty_cache()
         train_loss = ddp_loss[0] / ddp_loss[1]
+
         return float(train_loss.cpu().numpy())
     
     def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
@@ -203,8 +230,8 @@ class Trainer:
                 seq = seq.to(self.rank)
                 
                 batch_size, seq_len = seq.shape
-                generated = seq.clone()  
                 all_logits = torch.zeros((batch_size, seq_len - start_pos, self.model.vocab_size), device=self.rank)
+
                 for i in range(start_pos, seq_len): 
                     logits = self.model(seq[:, :i], start_pos)
                     labels = seq[:,i].reshape(-1)
@@ -223,14 +250,20 @@ class Trainer:
                         probs = torch.softmax(logits, dim=-1)
                         next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
                     del logits, probs, 
-                    generated[:, i] = next_token  
-                self.eval_task.update(refs=seq, preds=generated)
+
+                self.history["accuracy_val"].append(compute_accuracy(labels, all_logits.view(-1, vocab_size)))
+                self.history["f1_val"].append(compute_f1(labels, all_logits.view(-1, vocab_size)))
+
+                if self.eval_task:
+                    self.eval_task.update(refs=seq, preds=all_logits.argmax(dim=-1))
                 self.eval_conf.update(all_logits)
 
-        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
-        test_loss = ddp_loss[0] / ddp_loss[1]
+                del all_logits, seq
 
-        return float(test_loss.cpu().numpy())
+        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+        val_loss = ddp_loss[0] / ddp_loss[1]
+
+        return float(val_loss.cpu().numpy())
 
     @DeprecationWarning
     def _infer(self, seq, mode: str = "greedy"):
