@@ -82,22 +82,31 @@ Of course, no one template will serve all projects since your needs may be diffe
 
 Use the `BLANK_README.md` to get started. -->
 
+This project is a Python implementation of an LLM Uncertainty Quantification with Tsetlin Machine in the context of financial risk management. The idea is to use the LLM training to generate synthetic data and use it to train a Tsetlin Machine to predict the uncertainty of the LLM model. 
+
+The design of the LLM is based on the Transformer-decoder architecture. The Tsetlin Machine is a propositional logic-based machine learning algorithm that can be used to predict the uncertainty of the LLM model. Here, we use a Regression Label-Critic Tsetlin Machine to predict the uncertainty of the LLM model. The approach is novel as the Regression Label-Critic Tsetlin Machine that we develop is the first of its kind to predict the uncertainty of a Transformer-decoder model. The Regression Tsetlin Machine emerged from [Granmo, Ole-Christoffer (2018)](https://royalsocietypublishing.org/doi/10.1098/rsta.2019.0165) where as the Label-Critic Tsetlin Machine emerged from [Abouzeid et al. (202Z)](https://ieeexplore.ieee.org/document/9923796).
+
+The project is divided into two main parts: the LLM training and the Tsetlin Machine training. The LLM training is done using the Pytorch library. The Tsetlin Machine training is done using the Tsetlin Machine library and [this](https://github.com/Ahmed-Abouzeid/Label-Critic-TM/tree/main) repository. The project is designed to be run on a High-Performance Computing (HPC) cluster using the Slurm job scheduler.
+
+The image bellow shows the workflow of the project.
+
+<div align="center">
+  <img src="resources/flowchart.svg" alt="LLM-UQ-with-TM">
+</div>
+
+More details coming soon.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
 
 ### Built With
 
-<!-- This section should list any major frameworks/libraries used to bootstrap your project. Leave any add-ons/plugins for the acknowledgements section. Here are a few examples.
+* [Python](https://www.python.org/)
+* [PyTorch](https://pytorch.org/)
+* [Transformers](https://huggingface.co/transformers/)
+<!-- * [Tsetlin Machine]( -->
 
-* [![Next][Next.js]][Next-url]
-* [![React][React.js]][React-url]
-* [![Vue][Vue.js]][Vue-url]
-* [![Angular][Angular.io]][Angular-url]
-* [![Svelte][Svelte.dev]][Svelte-url]
-* [![Laravel][Laravel.com]][Laravel-url]
-* [![Bootstrap][Bootstrap.com]][Bootstrap-url]
-* [![JQuery][JQuery.com]][JQuery-url] -->
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -134,28 +143,24 @@ You should have Python (3.10) and pip installed on your machine. If you don't ha
     llama download --source meta --model-id meta-llama/Llama-3.1-8B --meta-url $LLAMA_31_URL
     llama download --source meta --model-id meta-llama/Llama-3.2-1B   --meta-url $LLAMA_32_URL
     ```
+6. Download GloVe embeddings:
+    ```sh
+    cd glove
+    wget https://nlp.stanford.edu/data/glove.840B.300d.zip
+    unzip glove.840B.300d.zip
+    ```
 ### To run on HPC with Slurm:
 
 1. Edit the '.env' file, according to the example 'example.env' file, to update the variables with the correct paths and settings. Then run the 'source' command to load the variables.
     ```sh
     source .env
     ```
-2. Run the 'run_llm.sh' script to submit the job to the HPC.
+2. Run the 'train_llm.sh' script which will automatically submit the job to the HPC.
     ```sh
-    sbatch --job-name=$JOB_NAME.$RUN_TYPE \
-    --account=$ACCOUNT \
-    --partition=$PARTITION \
-    --time=$TIMEOUT \
-    --nodes=$NB_NODES \
-    --ntasks-per-node=$NB_TASKS_PER_NODE \
-    --cpus-per-task=$CPUS_PER_TASK \
-    --gres=$GRES \
-    --constraint=$CONSTRAINT \
-    --mem=$MEM \
-    --output=$OUTPUT_DIR/$JOB_NAME.$RUN_TYPE.txt \
-    --export=ENV_DIR=$ENV_DIR \
-    train_llm.slurm 
+    bash train_llm.sh -t torch
     ```
+  Option:
+  - `-t`: type of model (torch or llama)
 <!-- 
     sbatch --job-name=$TM_JOB_NAME.$TM_RUN_TYPE \
     --account=$ACCOUNT \
@@ -176,18 +181,18 @@ You should have Python (3.10) and pip installed on your machine. If you don't ha
 
 
 <!-- USAGE EXAMPLES -->
-## Usage
+<!-- ## Usage -->
 
 <!-- Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
 
 _For more examples, please refer to the [Documentation](https://example.com)_ -->
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+<!-- <p align="right">(<a href="#readme-top">back to top</a>)</p> --> 
 
 
 
 <!-- ROADMAP -->
-## Roadmap
+<!-- ## Roadmap -->
 
 <!-- - [x] Add Changelog
 - [x] Add back to top links
@@ -199,12 +204,12 @@ _For more examples, please refer to the [Documentation](https://example.com)_ --
 
 See the [open issues](https://github.com/art-test-stack/LLM-UQ-with-TM/issues) for a full list of proposed features (and known issues). -->
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+<!-- <p align="right">(<a href="#readme-top">back to top</a>)</p> -->
 
 
 
 <!-- CONTRIBUTING -->
-## Contributing
+<!-- ## Contributing -->
 
 <!-- Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
 
@@ -217,7 +222,7 @@ Don't forget to give the project a star! Thanks again!
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request -->
 
-### Top contributors:
+<!-- ### Top contributors: -->
 
 <!-- <a href="https://github.com/art-test-stack/LLM-UQ-with-TM/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=https://github.com/art-test-stack/LLM-UQ-with-TM" alt="contrib.rocks image" />
@@ -230,25 +235,25 @@ Don't forget to give the project a star! Thanks again!
 <!-- LICENSE -->
 ## License
 
-<!-- Distributed under the Unlicense License. See `LICENSE.txt` for more information. -->
+Distributed under the Unlicense License. See `LICENSE.txt` for more information.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
 
 <!-- CONTACT -->
-## Contact
+<!-- ## Contact -->
 <!-- 
 Your Name - [@your_twitter](https://twitter.com/your_username) - email@example.com
 
 Project Link: [https://github.com/your_username/repo_name](https://github.com/your_username/repo_name) -->
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+<!-- <p align="right">(<a href="#readme-top">back to top</a>)</p> -->
 
 
 
 <!-- ACKNOWLEDGMENTS -->
-## Acknowledgments
+<!-- ## Acknowledgments -->
 
 <!-- Use this space to list resources you find helpful and would like to give credit to. I've included a few of my favorites to kick things off!
 
@@ -261,7 +266,7 @@ Project Link: [https://github.com/your_username/repo_name](https://github.com/yo
 * [Font Awesome](https://fontawesome.com)
 * [React Icons](https://react-icons.github.io/react-icons/search) -->
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+<!-- <p align="right">(<a href="#readme-top">back to top</a>)</p> -->
 
 
 
