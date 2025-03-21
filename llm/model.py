@@ -86,7 +86,7 @@ class LLM(Module):
         super().__init__()
         self.vocab_size = vocab_size
         self.nhead = nhead
-        self.token_embedding = embedding_ or nn.Embedding(vocab_size, model_size)
+        self.tok_embeddings = embedding_ or nn.Embedding(vocab_size, model_size)
         self.position_embedding = PositionalEncoding(d_model=model_size, max_len=max_seq_len)
         self.layers = nn.ModuleList([DecoderBlock(model_size, nhead, dim_ffn, dropout) for _ in range(num_layers)])
         self.ln_final = nn.LayerNorm(model_size)
@@ -100,7 +100,7 @@ class LLM(Module):
         batch_size, seq_len = input_ids.shape
         device = input_ids.device
 
-        x = self.token_embedding(input_ids) + self.position_embedding.pe[:, :seq_len, :].to(input_ids.device) 
+        x = self.tok_embeddings(input_ids) + self.position_embedding.pe[:, :seq_len, :].to(input_ids.device) 
 
         mask = None
         if seq_len > 1:

@@ -22,7 +22,7 @@ class GloVeEmbedding(torch.nn.Module):
         assert self.main.weight.shape == embeddings.shape
         self.main.weight.requires_grad = False
 
-        self.ffn = torch.nn.Linear(embeddings.shape[1], dim_model)
+        self.ffn = torch.nn.Linear(embeddings.shape[1], dim_model, bias=False)
 
     def forward(self, x):
         return self.ffn(self.main(x))
@@ -272,6 +272,6 @@ def get_glove_tokenizer_and_embeddings(glove_path: str, model_name: str, dim_mod
     except:
         print("Initializing GloVe tokenizer...")
         tokenizer = GloVeTokenizer(glove_dir=glove_dir, special_tokens=special_tokens)
+        print("Tokenizer and embeddings files saved at:", glove_dir)
     print("GloVe tokenizer and embeddings loaded successfully!")
-    print("Tokenizer and embeddings files saved at:", glove_dir)
     return tokenizer, GloVeEmbedding(embeddings, dim_model)
