@@ -36,12 +36,12 @@ class GloVeTokenizer:
             tokenizer: Tokenizer = None
         ):
         tokenizer_path = str(Path(glove_dir) / 'tokenizer.json')
-        strip = "6B" in tokenizer_path
+        strip = True # "6B" in tokenizer_path
         for special_token, idx in special_tokens.items():
             setattr(self, special_token, idx)
         if tokenizer:
             self.model = tokenizer
-            self.model.pre_tokenizer = pre_tokenizers.PreTokenizer.custom(PreTokenizer())
+            self.model.pre_tokenizer = pre_tokenizers.PreTokenizer.custom(PreTokenizer(strip))
         else:
             vocab_path = str(Path(glove_dir) / 'vocab.json')
             self.model = Tokenizer(models.WordLevel(vocab_path, unk_token=CONTROL_TOKENS.unknown))
@@ -50,7 +50,7 @@ class GloVeTokenizer:
             )
             self.model.pre_tokenizer = pre_tokenizers.Whitespace()
             self.model.save(tokenizer_path)
-            self.model.pre_tokenizer = pre_tokenizers.PreTokenizer.custom(PreTokenizer())
+            self.model.pre_tokenizer = pre_tokenizers.PreTokenizer.custom(PreTokenizer(strip))
 
 
     @classmethod
