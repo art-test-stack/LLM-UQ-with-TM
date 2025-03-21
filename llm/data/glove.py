@@ -36,6 +36,7 @@ class GloVeTokenizer:
             tokenizer: Tokenizer = None
         ):
         tokenizer_path = str(Path(glove_dir) / 'tokenizer.json')
+        strip = "6B" in tokenizer_path
         for special_token, idx in special_tokens.items():
             setattr(self, special_token, idx)
         if tokenizer:

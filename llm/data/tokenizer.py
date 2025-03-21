@@ -5,8 +5,8 @@ import tiktoken
 from tiktoken import _tiktoken
 
 class CONTROL_TOKENS:
-    unknown = '<|unknown|>'
     padding = '<|padding|>'
+    unknown = '<|unknown|>'
     tab = '<|tab|>'
     new_line = '<|new_line|>'
     start_of_text = '<|begin_of_text|>'
