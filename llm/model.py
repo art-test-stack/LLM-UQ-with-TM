@@ -80,12 +80,13 @@ class LLM(Module):
             nhead: int,
             num_layers: int,
             padding_idx: int = None,
+            embedding_: nn.Module = None,
             dropout: float = 0.1
         ):
         super().__init__()
         self.vocab_size = vocab_size
         self.nhead = nhead
-        self.token_embedding = nn.Embedding(vocab_size, model_size)
+        self.token_embedding = embedding_ or nn.Embedding(vocab_size, model_size)
         self.position_embedding = PositionalEncoding(d_model=model_size, max_len=max_seq_len)
         self.layers = nn.ModuleList([DecoderBlock(model_size, nhead, dim_ffn, dropout) for _ in range(num_layers)])
         self.ln_final = nn.LayerNorm(model_size)
