@@ -16,7 +16,7 @@ def model_handler(params: Dict):
         TransformerBlock: nn.Module, transformer block
     """
 
-    print(f"Load model and tokenizer... type is {params['type']}")
+    print(f"Load model and tokenizer... Model type is {params['type']}")
     if params["type"] == "llama":
         model, tokenizer, TransformerBlock = llama_handler(params)
     elif params["type"] == "torch":
