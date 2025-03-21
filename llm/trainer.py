@@ -84,8 +84,8 @@ class Trainer:
             "confidence": [], 
             "accuracy_train": [], 
             "accuracy_val": [],
-            "f1_train": [],
-            "f1_val": []
+            # "f1_train": [],
+            # "f1_val": []
         }
 
     def fit(
@@ -151,15 +151,16 @@ class Trainer:
                 self.history["val_loss"].append(val_loss)
                 self.history["confidence"].append(confidence_score)
 
-                tepoch.set_postfix(
-                    loss = self.history["train_loss"][-1],
-                    val_loss = self.history["val_loss"][-1],
-                    confidence = confidence_score,
-                    accuracy_train = self.history["accuracy_train"][-1],
-                    accuracy_val = self.history["accuracy_val"][-1],
-                    f1_train = self.history["f1_train"][-1],
-                    f1_val = self.history["f1_val"][-1],
-                )
+                if self.rank == 0:
+                    tepoch.set_postfix(
+                        loss = self.history["train_loss"][-1],
+                        val_loss = self.history["val_loss"][-1],
+                        confidence = confidence_score,
+                        accuracy_train = self.history["accuracy_train"][-1],
+                        accuracy_val = self.history["accuracy_val"][-1],
+                        # f1_train = self.history["f1_train"][-1],
+                        # f1_val = self.history["f1_val"][-1],
+                    )
 
                 early_stopping(val_loss)
                 if self.rank == 0 and early_stopping.save_model:
@@ -187,17 +188,19 @@ class Trainer:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
         start_pos = self.start_pos
+        vocab_size = self.model.vocab_size
+
         for i, seq in enumerate(train_loader):
             assert not torch.isnan(seq).any(), "NaN found in sources!"
             seq = seq.to(self.rank)
             labels = seq[:,start_pos:].reshape(-1)
 
             with torch.autocast(device_type=f"cuda", dtype=torch.float32):
-                output = self.model(seq, start_pos)[:,start_pos:].reshape(-1, output.size(-1))
+                output = self.model(seq, start_pos)[:,start_pos:].reshape(-1, vocab_size)
                 loss = self.loss_fn(output, labels)
 
             self.history["accuracy_train"].append(compute_accuracy(labels, output))
-            self.history["f1_train"].append(compute_f1(labels, output))
+            # self.history["f1_train"].append(compute_f1(labels, output))
 
             loss.backward()
             _sz = labels.size(0)
@@ -233,26 +236,28 @@ class Trainer:
                 all_logits = torch.zeros((batch_size, seq_len - start_pos, self.model.vocab_size), device=self.rank)
 
                 for i in range(start_pos, seq_len): 
-                    logits = self.model(seq[:, :i], start_pos)
-                    labels = seq[:,i].reshape(-1)
+                    logits = self.model(seq[:, :i], i)
+                    labels = seq[:, i].reshape(-1)
                     logits = logits[:, -1, :] 
                     all_logits[:, i - start_pos, :] = logits
                     vocab_size = logits.size(-1)
 
                     loss = self.loss_fn(logits.view(-1, vocab_size), labels)
+                    del logits
                     
                     ddp_loss[0] += loss.item()
                     ddp_loss[1] += labels.numel()
 
-                    if mode == "greedy":
-                        next_token = logits.argmax(dim=-1)
-                    else:
-                        probs = torch.softmax(logits, dim=-1)
-                        next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
-                    del logits, probs, 
+                    # if mode == "greedy":
+                    #     next_token = logits.argmax(dim=-1)
+                    # else:
+                    #     probs = torch.softmax(logits, dim=-1)
+                    #     next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
+                    #     del probs
 
-                self.history["accuracy_val"].append(compute_accuracy(labels, all_logits.view(-1, vocab_size)))
-                self.history["f1_val"].append(compute_f1(labels, all_logits.view(-1, vocab_size)))
+                self.history["accuracy_val"].append(
+                    compute_accuracy(seq[:, start_pos:].reshape(-1), all_logits.view(-1, vocab_size)))
+                # self.history["f1_val"].append(compute_f1(labels, all_logits.view(-1, vocab_size)))
 
                 if self.eval_task:
                     self.eval_task.update(refs=seq, preds=all_logits.argmax(dim=-1))

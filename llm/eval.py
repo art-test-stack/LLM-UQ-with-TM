@@ -81,7 +81,7 @@ class EvalTask:
                 self.result_keys.append(key)
 
 def compute_accuracy(refs: torch.Tensor, preds: torch.Tensor):
-    acc = (preds.argmax(dim = -1) == preds).to(dtype = torch.float32).sum().item()
+    acc = (preds.argmax(dim = -1) == refs).to(dtype = torch.float32).sum().item()
     return acc / len(refs)
 
 def compute_f1(refs: torch.Tensor, preds: torch.Tensor):

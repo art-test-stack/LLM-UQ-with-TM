@@ -1,5 +1,5 @@
 model:
-  name: "big-model"
+  name: "big-model2"
   type: "torch"
   tokenizer: "gpt2"
   config:
