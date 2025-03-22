@@ -139,12 +139,12 @@ class Trainer:
                 t1 = time.time()
                 train_loss = self._train_epoch(train_loader)
                 t2 = time.time()
-                train_epoch_dt = f"{t2 - t1:.2f}"
+                dt_train_ep = f"{t2 - t1:.2f}"
 
                 t1 = time.time()
                 val_loss = self._val_epoch(val_loader)
                 t2 = time.time()
-                test_epoch_dt = f"{t2 - t1:.2f}"
+                dt_val_ep = f"{t2 - t1:.2f}"
 
                 self.lr_scheduler.step()
                 
@@ -168,8 +168,8 @@ class Trainer:
                         confidence = confidence_score,
                         accuracy_train = self.history["accuracy_train"][-1],
                         accuracy_val = self.history["accuracy_val"][-1],
-                        train_epoch_dt = train_epoch_dt,
-                        test_epoch_dt = test_epoch_dt,
+                        dt_train_epoch = dt_train_ep,
+                        dt_val_epoch = dt_val_ep,
                     )
 
                 early_stopping(val_loss)
