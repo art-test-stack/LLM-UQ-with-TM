@@ -134,8 +134,18 @@ class Trainer:
                 torch.cuda.empty_cache()
                 if "sampler" in train_kwargs.keys():
                     train_kwargs["sampler"].set_epoch(epoch)
+                import time
+
+                t1 = time.time()
                 train_loss = self._train_epoch(train_loader)
+                t2 = time.time()
+                train_epoch_dt = f"{t2 - t1:.2f}"
+
+                t1 = time.time()
                 val_loss = self._val_epoch(val_loader)
+                t2 = time.time()
+                test_epoch_dt = f"{t2 - t1:.2f}"
+
                 self.lr_scheduler.step()
                 
                 confidence_score = math.exp(self.eval_conf.get())
@@ -158,8 +168,8 @@ class Trainer:
                         confidence = confidence_score,
                         accuracy_train = self.history["accuracy_train"][-1],
                         accuracy_val = self.history["accuracy_val"][-1],
-                        # f1_train = self.history["f1_train"][-1],
-                        # f1_val = self.history["f1_val"][-1],
+                        train_epoch_dt = train_epoch_dt,
+                        test_epoch_dt = test_epoch_dt,
                     )
 
                 early_stopping(val_loss)
@@ -175,14 +185,14 @@ class Trainer:
                 
         # if self.rank == 0:
         #     self.save_model()
-       
-        if self.world_size > 1:
-            self.save_modelcheckpoint()
-        else:
-            self.save_model()
-            
-        with open(self.model_dir / "history.pickle", 'wb') as handle:
-            pickle.dump(self.history, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                if epoch % 20 == 0:    
+                    if self.world_size > 1:
+                        self.save_modelcheckpoint()
+                    else:
+                        self.save_model()
+                        
+                    with open(self.model_dir / "history.pickle", 'wb') as handle:
+                        pickle.dump(self.history, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()

@@ -61,10 +61,15 @@ class FinQADataset(Dataset):
             return table_str
 
         # formatted_table = format_table(table)
-
-        question = f"""{CONTROL_TOKENS.start_of_context}{pre_text}{CONTROL_TOKENS.end_of_context}{CONTROL_TOKENS.start_of_table}{table}{CONTROL_TOKENS.end_of_table}{CONTROL_TOKENS.start_of_description}{post_text}{CONTROL_TOKENS.end_of_description}"""
-        if self.hint and self.short_answer:
-            hint = data['gold_inds']
+        question = ""
+        if pre_text:
+            question += f"""{CONTROL_TOKENS.start_of_context}{pre_text}{CONTROL_TOKENS.end_of_context}"""
+        if table:
+            question += f"""{CONTROL_TOKENS.start_of_table}{table}{CONTROL_TOKENS.end_of_table}"""
+        if post_text:
+            question += f"""{CONTROL_TOKENS.start_of_description}{post_text}{CONTROL_TOKENS.end_of_description}"""
+        hint = data['gold_inds']
+        if self.hint and self.short_answer and hint:
             question += f"{CONTROL_TOKENS.start_of_hint}{hint}{CONTROL_TOKENS.end_of_hint}"
         question += f"{CONTROL_TOKENS.start_of_question}{question}{CONTROL_TOKENS.end_of_question}"
 
