@@ -32,6 +32,7 @@ training:
 
 data:
   short_answer: True
+  easy_task: False
   hint: True
   max_a_length: 8
 

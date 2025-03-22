@@ -16,6 +16,7 @@ class FinQADataset(Dataset):
             max_a_length: Union[int, None] = 8,
             short_answer: bool = True,
             hint: bool = False,
+            easy_task: bool = False
         ) -> None:
         self.data = data
         self.tokenizer = tokenizer
@@ -28,6 +29,7 @@ class FinQADataset(Dataset):
 
         self.hint = hint and not (hint and not short_answer)
         self.short_answer = short_answer
+        self.easy_task = easy_task
 
     def __len__(self):  
         return len(self.data)
@@ -42,15 +44,15 @@ class FinQADataset(Dataset):
         while type(post_text) == list:
             post_text = ("").join(post_text)
         table = str(data["table"])
-        question = data["question"]
+        _question = data["question"]
 
         # PREPARE ANSWER
         if self.short_answer:
-            answer = data["final_result"] if data["answer"] == "" else min(data["answer"], data["final_result"], key=len)
+            _answer = data["final_result"] if data["answer"] == "" else min(data["answer"], data["final_result"], key=len)
         else:
-            answer = data["gold_inds"]
-            while type(answer) == list:
-                answer = ("").join(answer)
+            _answer = data["gold_inds"]
+            while type(_answer) == list:
+                _answer = ("").join(_answer)
             program = data["program_re"]
 
         # WRAP THEM
@@ -62,19 +64,20 @@ class FinQADataset(Dataset):
 
         # formatted_table = format_table(table)
         question = ""
-        if pre_text:
+        if pre_text and not self.easy_task:
             question += f"""{CONTROL_TOKENS.start_of_context}{pre_text}{CONTROL_TOKENS.end_of_context}"""
-        if table:
+        if table and not self.easy_task:
             question += f"""{CONTROL_TOKENS.start_of_table}{table}{CONTROL_TOKENS.end_of_table}"""
-        if post_text:
+        if post_text and not self.easy_task:
             question += f"""{CONTROL_TOKENS.start_of_description}{post_text}{CONTROL_TOKENS.end_of_description}"""
         hint = data['gold_inds']
-        if self.hint and self.short_answer and hint:
+        
+        if (self.hint and self.short_answer and hint) or self.easy_task:
             question += f"{CONTROL_TOKENS.start_of_hint}{hint}{CONTROL_TOKENS.end_of_hint}"
-        question += f"{CONTROL_TOKENS.start_of_question}{question}{CONTROL_TOKENS.end_of_question}"
+        question += f"{CONTROL_TOKENS.start_of_question}{_question}{CONTROL_TOKENS.end_of_question}"
 
-        answer = f"{CONTROL_TOKENS.start_of_text}{answer}" 
-        if not self.short_answer:
+        answer = f"{CONTROL_TOKENS.start_of_text}{_answer}" 
+        if (not self.short_answer) and (not self.easy_task):
             answer += f"{CONTROL_TOKENS.start_of_program}{program}{CONTROL_TOKENS.end_of_program}"
         answer += f"{CONTROL_TOKENS.end_of_text}"
 
@@ -101,7 +104,6 @@ def get_data(
         max_length: int = 1024,
         max_a_length: Union[int, None] = None,
         short_answer: bool = True,
-        hint: bool = False,
         **kwargs
     ) -> Tuple[FinQADataset, FinQADataset, FinQADataset]:
     dataset = datasets.load_dataset("ibm-research/finqa", "en")
@@ -115,7 +117,8 @@ def get_data(
         "max_length": max_length,
         "max_a_length": max_a_length,
         "short_answer": short_answer,
-        "hint": hint,
+        "hint": kwargs.get("hint", False),
+        "easy_task": kwargs.get("easy_task", False)
     }
     train = FinQADataset(train, **params)
     test = FinQADataset(test, **params)
