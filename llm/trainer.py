@@ -233,6 +233,53 @@ class Trainer:
 
         return float(train_loss.cpu().numpy())
     
+    # def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
+    #     self.model.eval()
+    #     ddp_loss = torch.zeros(2, device=self.rank)
+    #     start_pos = self.start_pos
+    #     with torch.no_grad():
+    #         for seq in val_loader:
+    #             assert not torch.isnan(seq).any(), "NaN found in sources!"
+    #             seq = seq.to(self.rank)
+                
+    #             batch_size, seq_len = seq.shape
+    #             all_logits = torch.zeros((batch_size, seq_len - start_pos, self.model.vocab_size), device=self.rank)
+
+    #             for i in range(start_pos, seq_len): 
+    #                 logits = self.model(seq[:, :i], i)
+    #                 labels = seq[:, i].reshape(-1)
+    #                 logits = logits[:, -1, :] 
+    #                 all_logits[:, i - start_pos, :] = logits
+    #                 vocab_size = logits.size(-1)
+
+    #                 loss = self.loss_fn(logits.view(-1, vocab_size), labels)
+    #                 del logits
+                    
+    #                 ddp_loss[0] += loss.item()
+    #                 ddp_loss[1] += labels.numel()
+
+    #                 # if mode == "greedy":
+    #                 #     next_token = logits.argmax(dim=-1)
+    #                 # else:
+    #                 #     probs = torch.softmax(logits, dim=-1)
+    #                 #     next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
+    #                 #     del probs
+
+    #             self.history["accuracy_val"].append(
+    #                 compute_accuracy(seq[:, start_pos:].reshape(-1), all_logits.view(-1, vocab_size)))
+    #             # self.history["f1_val"].append(compute_f1(labels, all_logits.view(-1, vocab_size)))
+
+    #             if self.eval_task:
+    #                 self.eval_task.update(refs=seq, preds=all_logits.argmax(dim=-1))
+    #             self.eval_conf.update(all_logits)
+
+    #             del all_logits, seq
+
+    #     dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+    #     val_loss = ddp_loss[0] / ddp_loss[1]
+
+    #     return float(val_loss.cpu().numpy())
+    
     def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)
@@ -241,39 +288,25 @@ class Trainer:
             for seq in val_loader:
                 assert not torch.isnan(seq).any(), "NaN found in sources!"
                 seq = seq.to(self.rank)
-                
-                batch_size, seq_len = seq.shape
-                all_logits = torch.zeros((batch_size, seq_len - start_pos, self.model.vocab_size), device=self.rank)
+                vocab_size = self.model.vocab_size
+                labels = seq[:,start_pos:].reshape(-1)
 
-                for i in range(start_pos, seq_len): 
-                    logits = self.model(seq[:, :i], i)
-                    labels = seq[:, i].reshape(-1)
-                    logits = logits[:, -1, :] 
-                    all_logits[:, i - start_pos, :] = logits
-                    vocab_size = logits.size(-1)
-
-                    loss = self.loss_fn(logits.view(-1, vocab_size), labels)
-                    del logits
-                    
-                    ddp_loss[0] += loss.item()
-                    ddp_loss[1] += labels.numel()
-
-                    # if mode == "greedy":
-                    #     next_token = logits.argmax(dim=-1)
-                    # else:
-                    #     probs = torch.softmax(logits, dim=-1)
-                    #     next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
-                    #     del probs
+                with torch.autocast(device_type=f"cuda", dtype=torch.float32):
+                    output = self.model(seq, start_pos)[:,start_pos:]
+                    logits = output.reshape(-1, vocab_size)
+                    loss = self.loss_fn(output, labels)
 
                 self.history["accuracy_val"].append(
-                    compute_accuracy(seq[:, start_pos:].reshape(-1), all_logits.view(-1, vocab_size)))
-                # self.history["f1_val"].append(compute_f1(labels, all_logits.view(-1, vocab_size)))
-
+                    compute_accuracy(labels, logits))
+                
                 if self.eval_task:
-                    self.eval_task.update(refs=seq, preds=all_logits.argmax(dim=-1))
-                self.eval_conf.update(all_logits)
+                    self.eval_task.update(refs=seq, preds=logits)
+                self.eval_conf.update(output)
 
-                del all_logits, seq
+                ddp_loss[0] += loss.item()
+                ddp_loss[1] += labels.numel()
+
+                del labels, seq, output, logits
 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         val_loss = ddp_loss[0] / ddp_loss[1]
