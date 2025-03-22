@@ -1,7 +1,7 @@
 model:
-  name: "big-model-glove"
+  name: "model-glove"
   type: "torch"
-  tokenizer: "glove.840B.300d"
+  tokenizer: "glove.6B.300d"
   config:
     # num_layers: 12
     # model_size: 512
@@ -12,12 +12,12 @@ model:
     dim_ffn: 1024
     nhead: 16
     dropout: 0.1
-    max_seq_len: 2048
+    max_seq_len: 2500
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
 
 training:
-  batch_size: 4
+  batch_size: 2
   test_batch_size: 16
   epochs: 3000
   learning_rate: 1e-4
@@ -32,4 +32,8 @@ training:
 
 data:
   short_answer: True
+  hint: True
+  max_a_length: 8
+
+lctm:
   uq_path: "CSV_PATH"

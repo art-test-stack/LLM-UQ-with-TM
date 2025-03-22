@@ -12,7 +12,8 @@ def torch_handler(params):
             if not glove_path:
                 raise ValueError("Environment variable GLOVE_PATH is not set.")
             tokenizer, embedding_ = get_glove_tokenizer_and_embeddings(
-                glove_path=glove_path, model_name=params["tokenizer"], dim_model=params["config"]["model_size"])
+                glove_path=glove_path, model_name=params["tokenizer"], dim_model=params["config"]["model_size"],
+                force_init=True)
     else:
         try:
             tokenizer = Tokenizer(model_name=params["tokenizer"])

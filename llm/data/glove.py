@@ -253,8 +253,7 @@ def get_glove_tokenizer_and_embeddings(glove_path: str, model_name: str, dim_mod
         dim_model (int): The dimension of the model
     
     Returns:
-        GloVeTokenizer: The GloVe tokenizer
-        GloVeEmbedding: The GloVe embedding
+        GloVeTokenizer, GloVeEmbedding: The GloVe tokenizer, The GloVe embedding
     """
 
     glove_dir = Path(glove_path) / model_name

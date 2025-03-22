@@ -96,6 +96,7 @@ def get_data(
         max_length: int = 1024,
         max_a_length: Union[int, None] = None,
         short_answer: bool = True,
+        hint: bool = False,
         **kwargs
     ) -> Tuple[FinQADataset, FinQADataset, FinQADataset]:
     dataset = datasets.load_dataset("ibm-research/finqa", "en")
@@ -109,6 +110,7 @@ def get_data(
         "max_length": max_length,
         "max_a_length": max_a_length,
         "short_answer": short_answer,
+        "hint": hint,
     }
     train = FinQADataset(train, **params)
     test = FinQADataset(test, **params)

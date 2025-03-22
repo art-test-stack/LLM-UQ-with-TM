@@ -17,12 +17,10 @@ def split(text: str) -> list[str]:
     temp = []
     i = 0
     while i < len(words) - 1:
-
         if words[i] == ' ' and words[i + 1] not in CONTROL_TOKENS_LIST:
             temp.append(' ' + words[i + 1])
             i += 2
             continue
-
         if words[i].endswith(' ') and words[i + 1] not in CONTROL_TOKENS_LIST:
             temp.extend([words[i][:-1], ' ' + words[i + 1]])
             i += 2
@@ -30,7 +28,6 @@ def split(text: str) -> list[str]:
 
         temp.append(words[i])
         i += 1
-
     if i == len(words) - 1:
         temp.append(words[-1])
 

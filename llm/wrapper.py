@@ -9,7 +9,7 @@ import functools
 
 def fsdp_wrapper(
         model: nn.Module,
-        model_block: nn.Module,
+        model_block_cls: nn.Module,
         sharding_strategy: ShardingStrategy = ShardingStrategy.FULL_SHARD,
         device_id: int = torch.cuda.current_device(),
     ):
@@ -18,11 +18,11 @@ def fsdp_wrapper(
     transformer_auto_wrapper_policy = functools.partial(
         transformer_auto_wrap_policy,
         transformer_layer_cls={
-            model_block,
+            model_block_cls,
         },
     )
-    model = FSDP(
-        model,
+    model.layers = FSDP(
+        model.layers,
         sharding_strategy=sharding_strategy,
         auto_wrap_policy=transformer_auto_wrapper_policy,
         device_id=device_id,

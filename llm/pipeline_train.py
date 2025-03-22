@@ -43,7 +43,7 @@ import functools
 import yaml
 
 
-def setup(rank, world_size, master_port: str = '12355'):
+def setup(rank, world_size, master_port: str = f'{12355 + 10}'):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = master_port
 
@@ -87,19 +87,18 @@ def train_llm_pipeline(rank, world_size, args):
     model_params = params["model"]
     training_params = params["training"]
     data_params = params["data"]
+    lctm_params = params["lctm"]
 
     # Load tokenizer and model
     model, tokenizer, TransformerBlock = model_handler(model_params)
     model = model.to(rank)
-
-    vocab_size = tokenizer.get_vocab_size()
 
     # Load data
     # TODO: add to settings
     dataset_params = {
         "tokenizer": tokenizer,
         "max_length": model_params["config"]["max_seq_len"],
-        "max_a_length": 8, # TODO: TEMPORARY
+        # "max_a_length": model_params["config"]["max_a_len"], # TODO: TEMPORARY
         **data_params
     }
     start_pos = dataset_params["max_length"] - dataset_params["max_a_length"]
@@ -122,7 +121,6 @@ def train_llm_pipeline(rank, world_size, args):
     test_kwargs.update(cuda_kwargs)
     print("FinQADataset loaded!")
     
-
     if args.verbose:
         try:
             model.summary()
@@ -142,7 +140,8 @@ def train_llm_pipeline(rank, world_size, args):
     torch.cuda.set_device(rank)
     # Wrap the model with FSDP
     # TODO: add DDP wrapper
-    model = fsdp_wrapper(model, TransformerBlock)
+    if world_size > 1:
+        model = fsdp_wrapper(model, TransformerBlock)
 
     # Initialize optimizer
     lr = float(training_params["learning_rate"]) / training_params["batch_size"]
@@ -177,7 +176,7 @@ def train_llm_pipeline(rank, world_size, args):
 
     # Initialize evaluation task and CSV object
     eval_task = EvalTask(tokenizer=tokenizer)
-    csv_path = os.getenv(data_params["uq_path"]) + f"_{model_params['name']}"
+    csv_path = os.getenv(lctm_params["uq_path"]) + f"_{model_params['name']}"
     print("CSV path:", csv_path)
     csv_object = InputCSV(
         model=model, 
