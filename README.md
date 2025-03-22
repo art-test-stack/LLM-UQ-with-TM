@@ -2,7 +2,6 @@
 
 <a id="readme-top"></a>
 
-[![Stargazers][stars-shield]][stars-url]
 <!-- TABLE OF CONTENTS -->
 <details>
   <summary>Table of Contents</summary>

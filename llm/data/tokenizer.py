@@ -21,6 +21,8 @@ class CONTROL_TOKENS:
     end_of_question = '<|endofquestion|>'
     start_of_context = '<|startofcontext|>'
     end_of_context = '<|endofcontext|>'
+    start_of_hint = '<|startofhint|>'
+    end_of_hint = '<|endofhint|>'
 
 CONTROL_TOKENS_LIST = list(CONTROL_TOKENS.__dict__.values())[1:-3]
 tiktoken_models = list(tiktoken.model.MODEL_TO_ENCODING.keys())

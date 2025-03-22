@@ -15,6 +15,7 @@ class FinQADataset(Dataset):
             max_length: int = 1024,
             max_a_length: Union[int, None] = 8,
             short_answer: bool = True,
+            hint: bool = False,
         ) -> None:
         self.data = data
         self.tokenizer = tokenizer
@@ -22,6 +23,10 @@ class FinQADataset(Dataset):
         self.max_q_len = max_length - max_a_length
         self.max_a_len = max_a_length
         
+        if hint and not short_answer:
+            print("Warning: Hint is only available for short answer. Ignoring the hint parameter.")
+
+        self.hint = hint and not (hint and not short_answer)
         self.short_answer = short_answer
 
     def __len__(self):  
@@ -41,7 +46,7 @@ class FinQADataset(Dataset):
 
         # PREPARE ANSWER
         if self.short_answer:
-            answer = data["answer"] if not data["answer"] == "" else data["final_result"]
+            answer = data["final_result"] if data["answer"] == "" else min(data["answer"], data["final_result"], key=len)
         else:
             answer = data["gold_inds"]
             while type(answer) == list:
@@ -57,7 +62,12 @@ class FinQADataset(Dataset):
 
         # formatted_table = format_table(table)
 
-        question = f"""{CONTROL_TOKENS.start_of_context}{pre_text}{CONTROL_TOKENS.end_of_context}{CONTROL_TOKENS.start_of_table}{table}{CONTROL_TOKENS.end_of_table}{CONTROL_TOKENS.start_of_description}{post_text}{CONTROL_TOKENS.end_of_description}{CONTROL_TOKENS.start_of_question}{question}{CONTROL_TOKENS.end_of_question}"""
+        question = f"""{CONTROL_TOKENS.start_of_context}{pre_text}{CONTROL_TOKENS.end_of_context}{CONTROL_TOKENS.start_of_table}{table}{CONTROL_TOKENS.end_of_table}{CONTROL_TOKENS.start_of_description}{post_text}{CONTROL_TOKENS.end_of_description}"""
+        if self.hint and self.short_answer:
+            hint = data['gold_inds']
+            question += f"{CONTROL_TOKENS.start_of_hint}{hint}{CONTROL_TOKENS.end_of_hint}"
+        question += f"{CONTROL_TOKENS.start_of_question}{question}{CONTROL_TOKENS.end_of_question}"
+
         answer = f"{CONTROL_TOKENS.start_of_text}{answer}" 
         if not self.short_answer:
             answer += f"{CONTROL_TOKENS.start_of_program}{program}{CONTROL_TOKENS.end_of_program}"
