@@ -3,6 +3,7 @@ import datasets
 
 import torch
 from torch.utils.data import DataLoader, Dataset
+import numpy as np
 
 from typing import Any, Tuple, Union, List
 
@@ -16,13 +17,14 @@ class FinQADataset(Dataset):
             max_a_length: Union[int, None] = 8,
             short_answer: bool = True,
             hint: bool = False,
-            easy_task: bool = False
+            easy_task: bool = False,
+            pad_all_answers: bool = False
         ) -> None:
-        self.data = data
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.max_q_len = max_length - max_a_length
         self.max_a_len = max_a_length
+        self.pad_all_answers = pad_all_answers
         
         if hint and not short_answer:
             print("Warning: Hint is only available for short answer. Ignoring the hint parameter.")
@@ -31,11 +33,18 @@ class FinQADataset(Dataset):
         self.short_answer = short_answer
         self.easy_task = easy_task
 
+        data = list(map(self.read_data, data))
+        encodings = list(map(self.prepare_data, data))
+        
+        self.encodings = { key: [val[i] for val in encodings] for i, key in enumerate(["input_ids", "labels", "start_positions", "end_positions"]) }
+
     def __len__(self):  
-        return len(self.data)
+        return len(self.encodings["input_ids"])
 
     def __getitem__(self, idx: int):
-        data = self.data[idx]
+        return { key: torch.tensor(val[idx]) for key, val in self.encodings.items() }
+    
+    def make_question(self, data):
         # PREPARE QUESTION
         pre_text = data["pre_text"]
         while type(pre_text) == list:
@@ -46,23 +55,14 @@ class FinQADataset(Dataset):
         table = str(data["table"])
         _question = data["question"]
 
-        # PREPARE ANSWER
-        if self.short_answer:
-            _answer = data["final_result"] if data["answer"] == "" else min(data["answer"], data["final_result"], key=len)
-        else:
-            _answer = data["gold_inds"]
-            while type(_answer) == list:
-                _answer = ("").join(_answer)
-            program = data["program_re"]
-
-        # WRAP THEM
+        # WRAP TABLE
         def format_table(table_str):
             table_str = table_str.replace("[[", "[\n    [")
             table_str = table_str.replace("], [", "],\n    [")
             table_str = table_str.replace("]]", "]\n]")
             return table_str
-
         # formatted_table = format_table(table)
+
         question = ""
         if pre_text and not self.easy_task:
             question += f"""{CONTROL_TOKENS.start_of_context}{pre_text}{CONTROL_TOKENS.end_of_context}"""
@@ -76,28 +76,67 @@ class FinQADataset(Dataset):
             question += f"{CONTROL_TOKENS.start_of_hint}{hint}{CONTROL_TOKENS.end_of_hint}"
         question += f"{CONTROL_TOKENS.start_of_question}{_question}{CONTROL_TOKENS.end_of_question}"
 
+        return question
+
+    def make_answer(self, data):
+        # PREPARE ANSWER
+        if self.short_answer:
+            _answer = data["final_result"] if data["answer"] == "" else min(data["answer"], data["final_result"], key=len)
+        else:
+            _answer = data["gold_inds"]
+            while type(_answer) == list:
+                _answer = ("").join(_answer)
+            program = data["program_re"]
+
         answer = f"{CONTROL_TOKENS.start_of_text}{_answer}" 
         if (not self.short_answer) and (not self.easy_task):
             answer += f"{CONTROL_TOKENS.start_of_program}{program}{CONTROL_TOKENS.end_of_program}"
         answer += f"{CONTROL_TOKENS.end_of_text}"
 
+        return answer
+    
+    def read_data(self, data):
+        # GET QUESTION AND ANSWER
+        question = self.make_question(data)
+        answer = self.make_answer(data)
+
+        data["question_text"] = question
+        data["answer_text"] = answer
+        
+        return data
+
+    def prepare_data(self, data):
+        question = data["question_text"]
+        answer = data["answer_text"]
         # TOKENIZE THEM
         input_ids = self.tokenizer(question, padding='none', return_tensors=True)
-        input_ids = pad_sequence(input_ids, self.max_q_len, self.tokenizer.pad_token_id)
-
         labels = self.tokenizer(answer, padding='none', return_tensors=True)
-        labels = pad_sequence(labels, self.max_a_len, self.tokenizer.pad_token_id)
 
-        seq = torch.cat([input_ids, labels])
-        seq = seq.squeeze(0).cpu()
-        return seq
+        if self.pad_all_answers:
+            start_pos = self.max_q_len
+            end_positions = len(labels) + start_pos - 1
+            input_ids = pad_sequence(input_ids, self.max_q_len, self.tokenizer.pad_token_id)
+            labels = pad_sequence(labels, self.max_a_len, self.tokenizer.pad_token_id)
+            input_ids = torch.cat([input_ids, labels])
+            input_ids = input_ids.squeeze(0).cpu()
+        else:
+            raise NotImplementedError("Only pad_all_answers=True is supported for now.")
 
-def pad_sequence(token_ids: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
+        return input_ids, labels, start_pos, end_positions
+
+
+def pad_sequence(token_ids: Union[torch.Tensor, np.ndarray], max_length: int, pad_token_id: int) -> torch.Tensor:
+    token_instance = token_ids  # Store the original token_ids instance
+
+    if isinstance(token_ids, np.ndarray):
+        token_ids = torch.tensor(token_ids, dtype=torch.long)
     if len(token_ids) < max_length:
         pad_tokens = torch.tensor([pad_token_id] * (max_length - len(token_ids)), dtype=torch.long)
-        return torch.cat([token_ids, pad_tokens])
+        token_ids = torch.cat([token_ids, pad_tokens])
     else:
-        return token_ids[-max_length:]
+        token_ids = token_ids[-max_length:]
+
+    return token_ids if isinstance(token_instance, torch.Tensor) else token_ids.numpy()
   
 def get_data(
         tokenizer: Tokenizer,
@@ -118,7 +157,8 @@ def get_data(
         "max_a_length": max_a_length,
         "short_answer": short_answer,
         "hint": kwargs.get("hint", False),
-        "easy_task": kwargs.get("easy_task", False)
+        "easy_task": kwargs.get("easy_task", False),
+        "pad_all_answers": kwargs.get("pad_all_answers", True)
     }
     train = FinQADataset(train, **params)
     test = FinQADataset(test, **params)

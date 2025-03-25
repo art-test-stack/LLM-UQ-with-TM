@@ -92,7 +92,7 @@ class LLM(Module):
         self.ln_final = nn.LayerNorm(model_size)
         self.output_layer = nn.Linear(model_size, vocab_size)
 
-    def forward(self, input_ids: torch.Tensor, starting_pos: int):
+    def forward(self, input_ids: torch.Tensor, start_positions: int = 1):
         """
         input_ids: (batch_size, seq_len) - tokenized input sequence
         starting_pos: (batch_size,) - position at which generation should start
@@ -104,8 +104,8 @@ class LLM(Module):
 
         mask = None
         if seq_len > 1:
-            mask = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=starting_pos-1)
-            mask[seq_len - starting_pos + 1:,:] = torch.zeros(starting_pos - 1, seq_len, device=device)
+            mask = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=start_positions - 1)
+            mask[seq_len - start_positions + 1:,:] = torch.zeros(start_positions - 1, seq_len, device=device)
             mask = mask.masked_fill(mask == 0, True).masked_fill(mask == 1, False)
 
         for layer in self.layers:

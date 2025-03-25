@@ -49,12 +49,7 @@ class Trainer:
             csv_object: InputCSV = None,
             eval_task: Callable = None,
             eval_confidence: Callable = None,
-            name: str = "model",
-            model_dir: str = "models/",
             lr_scheduler: optim.lr_scheduler = None,
-            bos_token_id: int = 0,
-            eos_token_id: int = 0,
-            pad_token_id: int = 0,
             start_pos: int = 0,
             **kwargs
         ) -> None:
@@ -64,13 +59,18 @@ class Trainer:
         self.loss_fn = loss_fn
         self.rank = rank
         self.world_size = world_size
-        self.name = name
+
+        self.name = kwargs.get("name", "model")
+        self.model_type = kwargs.get("model_type", "torch")
+
+        model_dir = kwargs.get("model_dir", "models/")
         self.model_dir = Path(model_dir).joinpath(self.name)
         self.model_dir.mkdir(parents=True, exist_ok=True)
-        assert not bos_token_id == eos_token_id, "Start of answer and end of answer tokens should be different"
-        self.bos_token_id = bos_token_id
-        self.eos_token_id = eos_token_id
-        self.pad_token_id = pad_token_id
+
+        self.bos_token_id = kwargs.get("bos_token_id", 0)
+        self.eos_token_id = kwargs.get("eos_token_id", 0)
+        self.pad_token_id = kwargs.get("pad_token_id", 0)
+
         self.start_pos = start_pos
         self.verbose = True
 
@@ -87,6 +87,16 @@ class Trainer:
             # "f1_train": [],
             # "f1_val": []
         }
+        try:
+            self.load_last_session()
+            print("Previous session loaded!")
+        except:
+            print("No previous session found!")
+
+    def load_last_session(self):
+        with open(self.model_dir / "history.pickle", 'rb') as handle:
+            self.history = pickle.load(handle)
+        self.load_model()
 
     def fit(
             self, 
@@ -115,7 +125,6 @@ class Trainer:
             train_kwargs: Dict, kwargs for DataLoader of training set
             val_kwargs: Dict, kwargs for DataLoader of validation set
         """
-
         
         train_loader = DataLoader(train_set, **train_kwargs)
         val_loader = DataLoader(val_set, **val_kwargs)
@@ -136,13 +145,14 @@ class Trainer:
                     train_kwargs["sampler"].set_epoch(epoch)
                 import time
 
+                train_ep_loop, val_ep_loop = self._get_train_val_loops()
                 t1 = time.time()
-                train_loss = self._train_epoch(train_loader)
+                train_loss = train_ep_loop(train_loader)
                 t2 = time.time()
                 dt_train_ep = f"{t2 - t1:.2f}"
 
                 t1 = time.time()
-                val_loss = self._val_epoch(val_loader)
+                val_loss = val_ep_loop(val_loader)
                 t2 = time.time()
                 dt_val_ep = f"{t2 - t1:.2f}"
 
@@ -194,7 +204,203 @@ class Trainer:
                     with open(self.model_dir / "history.pickle", 'wb') as handle:
                         pickle.dump(self.history, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+    def _get_train_val_loops(self):
+        if self.model_type == "hgface":
+            return self._train_hgface_epoch, self._val_hgface_epoch
+        return self._iter_train_epoch, self._iter_val_epoch
+
     def _train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
+        self.model.train()
+        ddp_loss = torch.zeros(2).to(self.rank)
+        start_pos = self.start_pos
+        vocab_size = self.model.vocab_size
+
+        for i, batch in enumerate(train_loader):
+            input_ids = batch["input_ids"].to(self.rank)
+            labels = batch["labels"].to(self.rank)
+            start_pos = batch["start_positions"].min().to(self.rank)
+            
+            del batch
+            assert not torch.isnan(input_ids).any(), "NaN found in sources!"
+
+            # Forward pass (entire sequence at once)
+            with torch.autocast(device_type="cuda", dtype=torch.float32):
+                output = self.model(input_ids, start_pos) 
+                loss = self.loss_fn(output.view(-1, vocab_size), input_ids[:, 1:].reshape(-1))
+                loss = loss / accumulation_steps
+            
+            loss.backward()
+
+            batch_accuracy = compute_accuracy(labels[:, 1:].reshape(-1), output[:, start_pos:].view(-1, vocab_size))
+            self.history["accuracy_train"].append(batch_accuracy)
+
+            _sz = labels.size(0)
+            del input_ids, labels, output
+
+            if self.csv_object:
+                self.csv_object.update_model()
+            if (i + 1) % accumulation_steps == 0:
+                self.optimizer.step()
+                self.optimizer.zero_grad(set_to_none=True)
+                self.model.zero_grad()
+                
+            ddp_loss[0] += loss.item()
+            ddp_loss[1] += _sz
+        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+        torch.cuda.empty_cache()
+        train_loss = ddp_loss[0] / ddp_loss[1]
+
+        return float(train_loss.cpu().numpy())
+    
+    def _iter_train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
+        self.model.train()
+        ddp_loss = torch.zeros(2).to(self.rank)
+        vocab_size = self.model.vocab_size
+
+        epoch_accuracies = []
+        for i, batch in enumerate(train_loader):
+            input_ids = batch["input_ids"].to(self.rank)
+            labels = batch["labels"].to(self.rank)
+            start_pos = batch["start_positions"].min().to(self.rank)
+            end_positions = batch["end_positions"].to(self.rank)
+
+            del batch
+            assert not torch.isnan(input_ids).any(), "NaN found in sources!"
+
+            batch_accuracies = []
+            total_loss = 0 
+            for idx in range(end_positions.max() - start_pos):
+                with torch.autocast(device_type="cuda", dtype=torch.float32):
+                    output = self.model(input_ids[:, :start_pos + idx], 1) 
+                    output = output.reshape(-1, vocab_size)
+                    
+                    loss = self.loss_fn(output.reshape(-1, vocab_size), input_ids[:, 1: start_pos + idx + 1].reshape(-1))
+                    loss = loss / (end_positions.max() - start_pos) 
+                    
+                loss.backward()  # Backpropagate at each step
+                
+                total_loss += loss.item() / (end_positions.max() - start_pos)
+                del loss
+                batch_accuracy = compute_accuracy(
+                    labels[:, start_pos + idx + 1].reshape(-1), 
+                    output[:,start_pos + idx].reshape(-1, vocab_size)
+                )
+                batch_accuracies.append(batch_accuracy)
+
+            epoch_accuracies.append(sum(batch_accuracy) / len(batch_accuracies))
+
+            if (i + 1) % accumulation_steps == 0:
+                self.optimizer.step()
+                self.optimizer.zero_grad(set_to_none=True)
+                self.model.zero_grad()
+
+            ddp_loss[0] += total_loss * accumulation_steps 
+            ddp_loss[1] += labels.size(0)
+
+            del input_ids, labels, output
+
+        self.history["accuracy_train"].append(sum(epoch_accuracies) / len(epoch_accuracies))
+
+        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+        torch.cuda.empty_cache()
+        train_loss = ddp_loss[0] / ddp_loss[1]
+
+        return float(train_loss.cpu().numpy())
+
+
+    def _iter_val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
+        self.model.eval()
+        ddp_loss = torch.zeros(2, device=self.rank)
+        vocab_size = self.model.vocab_size
+
+        epoch_accuracies = []
+        
+        with torch.no_grad():
+            for i, batch in enumerate(val_loader):
+                input_ids = batch["input_ids"].to(self.rank)
+                labels = batch["labels"].to(self.rank)
+                start_pos = batch["start_positions"].min().to(self.rank)
+                end_positions = batch["end_positions"].to(self.rank)
+
+                del batch
+                assert not torch.isnan(input_ids).any(), "NaN found in sources!"
+                batch_accuracies = []
+
+                preds = torch.zeros((labels.size(0), labels.size(1) - 1, vocab_size), device=self.rank)
+                for idx in range(end_positions.max() - start_pos):
+                    with torch.autocast(device_type="cuda", dtype=torch.float32):
+                        output = self.model(input_ids[:, :start_pos + idx], 1)[:, -1]
+                        preds[:, idx] = output.argmax(dim=-1)
+                        output = output.reshape(-1, vocab_size)
+                        
+                        loss = self.loss_fn(output.reshape(-1, vocab_size), labels[:, idx + 1].reshape(-1))
+                        loss = loss / (end_positions.max() - start_pos) 
+                        
+                    ddp_loss[0] += loss.item() / (end_positions.max() - start_pos)
+
+                    self.eval_conf.update(output)
+                    del input_ids, loss
+                    batch_accuracy = compute_accuracy(
+                        labels[:, start_pos + idx + 1].reshape(-1), 
+                        output[:,start_pos + idx].reshape(-1, vocab_size)
+                    )
+                    del output
+                    batch_accuracies.append(batch_accuracy)
+
+                if self.eval_task:
+                    self.eval_task.update(refs=labels[:,1:], preds=preds)
+                
+                ddp_loss[1] += labels.numel()
+                
+                del labels, preds
+                epoch_accuracies.append(sum(batch_accuracy) / len(batch_accuracies))
+
+            self.history["accuracy_train"].append(sum(epoch_accuracies) / len(epoch_accuracies))
+                
+        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+        val_loss = ddp_loss[0] / ddp_loss[1]
+
+        return float(val_loss.cpu().numpy())
+    
+    
+    def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
+        self.model.eval()
+        ddp_loss = torch.zeros(2, device=self.rank)
+        start_pos = self.start_pos
+        epoch_accuracies = []
+        with torch.no_grad():
+            for seq in val_loader:
+                assert not torch.isnan(seq).any(), "NaN found in sources!"
+                seq = seq.to(self.rank)
+                vocab_size = self.model.vocab_size
+                labels = seq[:,start_pos:].reshape(-1)
+
+                with torch.autocast(device_type=f"cuda", dtype=torch.float32):
+                    output = self.model(seq, start_pos)[:,start_pos:]
+                    logits = output.reshape(-1, vocab_size)
+
+                    loss = self.loss_fn(logits, labels)
+
+                epoch_accuracies.append(
+                    compute_accuracy(labels, logits))
+                
+                if self.eval_task:
+                    self.eval_task.update(refs=seq, preds=output.argmax(dim=-1))
+                self.eval_conf.update(output)
+
+                ddp_loss[0] += loss.item()
+                ddp_loss[1] += labels.numel()
+
+                del labels, seq, output, logits
+
+        self.history["accuracy_val"].append(sum(epoch_accuracies) / len(epoch_accuracies))
+        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+        val_loss = ddp_loss[0] / ddp_loss[1]
+
+        return float(val_loss.cpu().numpy())
+    
+    @DeprecationWarning
+    def _train_epoch_last(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
         start_pos = self.start_pos
@@ -233,54 +439,48 @@ class Trainer:
 
         return float(train_loss.cpu().numpy())
     
-    # def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
-    #     self.model.eval()
-    #     ddp_loss = torch.zeros(2, device=self.rank)
-    #     start_pos = self.start_pos
-    #     with torch.no_grad():
-    #         for seq in val_loader:
-    #             assert not torch.isnan(seq).any(), "NaN found in sources!"
-    #             seq = seq.to(self.rank)
-                
-    #             batch_size, seq_len = seq.shape
-    #             all_logits = torch.zeros((batch_size, seq_len - start_pos, self.model.vocab_size), device=self.rank)
+    @PendingDeprecationWarning
+    def _train_hgface_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
+        self.model.train()
+        ddp_loss = torch.zeros(2).to(self.rank)
+        start_pos = self.start_pos
+        vocab_size = self.model.vocab_size
 
-    #             for i in range(start_pos, seq_len): 
-    #                 logits = self.model(seq[:, :i], i)
-    #                 labels = seq[:, i].reshape(-1)
-    #                 logits = logits[:, -1, :] 
-    #                 all_logits[:, i - start_pos, :] = logits
-    #                 vocab_size = logits.size(-1)
+        for i, seq in enumerate(train_loader):
+            assert not torch.isnan(seq).any(), "NaN found in sources!"
+            seq = seq.to(self.rank)
+            labels = seq[:,start_pos:].reshape(-1)
 
-    #                 loss = self.loss_fn(logits.view(-1, vocab_size), labels)
-    #                 del logits
-                    
-    #                 ddp_loss[0] += loss.item()
-    #                 ddp_loss[1] += labels.numel()
+            with torch.autocast(device_type=f"cuda", dtype=torch.float32):
+                output = self.model(seq, start_pos)[:,start_pos:].reshape(-1, vocab_size)
+                loss = self.loss_fn(output, labels)
 
-    #                 # if mode == "greedy":
-    #                 #     next_token = logits.argmax(dim=-1)
-    #                 # else:
-    #                 #     probs = torch.softmax(logits, dim=-1)
-    #                 #     next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
-    #                 #     del probs
+            self.history["accuracy_train"].append(compute_accuracy(labels, output))
+            # self.history["f1_train"].append(compute_f1(labels, output))
 
-    #             self.history["accuracy_val"].append(
-    #                 compute_accuracy(seq[:, start_pos:].reshape(-1), all_logits.view(-1, vocab_size)))
-    #             # self.history["f1_val"].append(compute_f1(labels, all_logits.view(-1, vocab_size)))
+            loss.backward()
+            _sz = labels.size(0)
+            del seq, labels, output
 
-    #             if self.eval_task:
-    #                 self.eval_task.update(refs=seq, preds=all_logits.argmax(dim=-1))
-    #             self.eval_conf.update(all_logits)
+            if self.csv_object:
+                self.csv_object.update_model()
+            if (i + 1) % accumulation_steps == 0:
+                if self.rank == 0 or True:
+                    pass
+                self.optimizer.step()
+                self.optimizer.zero_grad(set_to_none=True)
+                self.model.zero_grad()
+            # self.optimizer.step()
+            ddp_loss[0] += loss.item()
+            ddp_loss[1] += _sz
+        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+        torch.cuda.empty_cache()
+        train_loss = ddp_loss[0] / ddp_loss[1]
 
-    #             del all_logits, seq
+        return float(train_loss.cpu().numpy())
 
-    #     dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
-    #     val_loss = ddp_loss[0] / ddp_loss[1]
-
-    #     return float(val_loss.cpu().numpy())
-    
-    def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
+    @PendingDeprecationWarning
+    def _val_hgface_epoch(self, val_loader: DataLoader) -> float:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)
         start_pos = self.start_pos
@@ -308,6 +508,54 @@ class Trainer:
                 ddp_loss[1] += labels.numel()
 
                 del labels, seq, output, logits
+
+        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+        val_loss = ddp_loss[0] / ddp_loss[1]
+
+        return float(val_loss.cpu().numpy())
+    
+    @DeprecationWarning
+    def _slow_val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
+        self.model.eval()
+        ddp_loss = torch.zeros(2, device=self.rank)
+        start_pos = self.start_pos
+        with torch.no_grad():
+            for seq in val_loader:
+                assert not torch.isnan(seq).any(), "NaN found in sources!"
+                seq = seq.to(self.rank)
+                
+                batch_size, seq_len = seq.shape
+                all_logits = torch.zeros((batch_size, seq_len - start_pos, self.model.vocab_size), device=self.rank)
+
+                for i in range(start_pos, seq_len): 
+                    logits = self.model(seq[:, :i], i)
+                    labels = seq[:, i].reshape(-1)
+                    logits = logits[:, -1, :] 
+                    all_logits[:, i - start_pos, :] = logits
+                    vocab_size = logits.size(-1)
+
+                    loss = self.loss_fn(logits.view(-1, vocab_size), labels)
+                    del logits
+                    
+                    ddp_loss[0] += loss.item()
+                    ddp_loss[1] += labels.numel()
+
+                    # if mode == "greedy":
+                    #     next_token = logits.argmax(dim=-1)
+                    # else:
+                    #     probs = torch.softmax(logits, dim=-1)
+                    #     next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
+                    #     del probs
+
+                self.history["accuracy_val"].append(
+                    compute_accuracy(seq[:, start_pos:].reshape(-1), all_logits.view(-1, vocab_size)))
+                # self.history["f1_val"].append(compute_f1(labels, all_logits.view(-1, vocab_size)))
+
+                if self.eval_task:
+                    self.eval_task.update(refs=seq, preds=all_logits.argmax(dim=-1))
+                self.eval_conf.update(all_logits)
+
+                del all_logits, seq
 
         dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
         val_loss = ddp_loss[0] / ddp_loss[1]
