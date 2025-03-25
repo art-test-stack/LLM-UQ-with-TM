@@ -18,10 +18,12 @@ source ${ENV_DIR}
 
 # pip install --upgrade pip 
 pip install -r requirements.txt
-# python -c "import torch; print(torch.__version__, torch.version.cuda)"
+pip install pyTsetlinMachine
+python -c "import torch; print(torch.__version__, torch.version.cuda)"
 
 nvidia-smi
 pwd
+nvcc --version
 # export PATH=/usr/local/cuda-12.4/bin:$PATH$ 
 # export LD_LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LD_LIBRARY_PATH$ 
 # cd $PATH
@@ -41,9 +43,10 @@ pwd
 # su -c "make install"
 # # # pwd
 # # cd ..
-cd labelcritic_tm/
-pip install .
-python examples/synthetic_lctm.py
+# cd labelcritic_tm/
+# pip install .
+# python examples/synthetic_lctm.py
+python main_lctm_train.py --csv_path=${TM_DATA}
 # # cd ../
 # # pip install nvidia-pyindex
 # # pip install nvidia-cuda-nvcc

@@ -9,13 +9,15 @@ from sklearn.metrics import silhouette_score
 # from my_datasets.data import Synthetic
 from pathlib import Path
 from typing import Union
+from argparse import Namespace
 
 
-def pipeline_lctm(csv_path: Union[str,Path] = "dataset/uq_big-model1.csv"):
+def pipeline_lctm(args: Namespace):
+    csv_path = args.csv_path
     num_clauses_l = [8]
     T_l = [5]
     S_l = [100]
-    num_features = 600
+    # num_features = 600
     num_subpatterns = 10
     min_samples_per_sub_pattern = 700
     max_samples_per_sub_pattern = 700
@@ -28,13 +30,19 @@ def pipeline_lctm(csv_path: Union[str,Path] = "dataset/uq_big-model1.csv"):
     df.drop(df[df["epoch"].isin(epochs_to_remove)].index, inplace=True)
     X = df.to_numpy(copy=True)
 
+    print("X.shape", X.shape)
+
     b = Binarizer(max_bits_per_feature = 10)
     b.fit(X)
     X_train = b.transform(X)
 
+    print("X_train.shape", X_train.shape)
+    X_train = X_train.astype(np.int8)
+    num_features = X_train.shape[1]
+
     results = []
     sil_scores = []
-    runs = 1
+    runs = 10
     while runs != 0:
         for num_clauses in num_clauses_l:
             for T in T_l:
@@ -55,9 +63,9 @@ def pipeline_lctm(csv_path: Union[str,Path] = "dataset/uq_big-model1.csv"):
                         print('Cluster Size: ', len(v))
                         #print(v)    
                         print('Cluster Included Patterns Info:')
-                        good = lctm.get_cluster_info(all_patterns, v)
-                        if good:
-                            good_counter += 1
+                        # good = lctm.get_cluster_info(all_patterns, v)
+                        # if good:
+                            # good_counter += 1
                         print('----------------------------------------')
                         try:
                             score = silhouette_score(all_samples, all_labels, metric='euclidean')

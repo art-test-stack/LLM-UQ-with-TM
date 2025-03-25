@@ -294,13 +294,14 @@ class Trainer:
                 with torch.autocast(device_type=f"cuda", dtype=torch.float32):
                     output = self.model(seq, start_pos)[:,start_pos:]
                     logits = output.reshape(-1, vocab_size)
-                    loss = self.loss_fn(output, labels)
+
+                    loss = self.loss_fn(logits, labels)
 
                 self.history["accuracy_val"].append(
                     compute_accuracy(labels, logits))
                 
                 if self.eval_task:
-                    self.eval_task.update(refs=seq, preds=logits)
+                    self.eval_task.update(refs=seq, preds=output.argmax(dim=-1))
                 self.eval_conf.update(output)
 
                 ddp_loss[0] += loss.item()
