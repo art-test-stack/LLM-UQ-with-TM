@@ -23,6 +23,7 @@ if __name__=="__main__":
                         help='For Saving the current Model')
     parser.add_argument('--verbose', action='store_true', default=False, 
                         help='For Showing some more information')
+    parser.add_argument('--train-mode', type=str, default="batch", metavar='TM',)
     parser.add_argument(
         "-st",
         "--skip_training",
@@ -30,7 +31,6 @@ if __name__=="__main__":
         action="store_true",
     )
     args = parser.parse_args()
-
     torch.manual_seed(args.seed)
     WORLD_SIZE = torch.cuda.device_count()
     print(f"WORLD_SIZE: {WORLD_SIZE}")

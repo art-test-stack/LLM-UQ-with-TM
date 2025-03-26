@@ -36,13 +36,17 @@ class FinQADataset(Dataset):
         data = list(map(self.read_data, data))
         encodings = list(map(self.prepare_data, data))
         
-        self.encodings = { key: [val[i] for val in encodings] for i, key in enumerate(["input_ids", "labels", "start_positions", "end_positions"]) }
+        self.encodings = { key: [val[i] for val in encodings] for i, key in enumerate(["input_ids", "labels", "start_positions", "end_positions", "len_q"]) }
+        # self.encodings = { key: [val[i] for val in encodings] for i, key in enumerate(["input_ids", "labels", "mask", "start_positions", "end_positions"]) }
 
     def __len__(self):  
         return len(self.encodings["input_ids"])
 
     def __getitem__(self, idx: int):
-        return { key: torch.tensor(val[idx]) for key, val in self.encodings.items() }
+        mask = self.make_mask(idx)
+        res = { key: torch.tensor(val[idx]) for key, val in self.encodings.items() if not key == "len_q" }
+        res["mask"] = mask
+        return res
     
     def make_question(self, data):
         # PREPARE QUESTION
@@ -95,6 +99,32 @@ class FinQADataset(Dataset):
 
         return answer
     
+    def make_mask_old(self, idx: int):
+        len_q = self.encodings["len_q"][idx]
+        start_pos = self.encodings["start_positions"][idx]
+        end_pos = self.encodings["end_positions"][idx]
+        
+        key_padding_mask = np.zeros(len_q, dtype=np.int64)
+        key_padding_mask = pad_sequence(key_padding_mask, self.max_length, 1)
+        print("key_padding_mask", key_padding_mask)
+        
+        attention_mask = np.triu(np.ones((self.max_length, self.max_length), dtype=np.int64), k=start_pos)
+
+        mask = key_padding_mask * attention_mask
+        mask[end_pos-start_pos:] = 1
+        mask[:,end_pos:] = 1
+        return mask.astype(np.bool)
+    
+    def make_mask(self, idx: int):
+        len_q = self.encodings["len_q"][idx]
+        start_pos = self.encodings["start_positions"][idx]
+        end_pos = self.encodings["end_positions"][idx]
+
+        attention_mask = np.triu(np.ones((self.max_length, self.max_length), dtype=np.int64), k=end_pos - self.max_length + 1)
+        attention_mask[:,len_q:start_pos] = 1
+
+        return attention_mask.astype(np.bool)
+
     def read_data(self, data):
         # GET QUESTION AND ANSWER
         question = self.make_question(data)
@@ -112,18 +142,24 @@ class FinQADataset(Dataset):
         input_ids = self.tokenizer(question, padding='none', return_tensors=True)
         labels = self.tokenizer(answer, padding='none', return_tensors=True)
 
+        len_q = min(self.max_q_len, len(input_ids))
+
         if self.pad_all_answers:
             start_pos = self.max_q_len
-            end_positions = len(labels) + start_pos - 1
+            end_positions = min(len(labels), self.max_a_len) + start_pos
             input_ids = pad_sequence(input_ids, self.max_q_len, self.tokenizer.pad_token_id)
-            labels = pad_sequence(labels, self.max_a_len, self.tokenizer.pad_token_id)
-            input_ids = torch.cat([input_ids, labels])
+            labels = pad_sequence(labels, self.max_a_len + 1, self.tokenizer.pad_token_id)
+            input_ids = torch.cat([input_ids, labels[:-1]])
+            labels = labels[1:]
             input_ids = input_ids.squeeze(0).cpu()
         else:
             raise NotImplementedError("Only pad_all_answers=True is supported for now.")
 
-        return input_ids, labels, start_pos, end_positions
-
+        # return input_ids, labels, mask, start_pos, end_positions
+        input_ids = input_ids.numpy()
+        labels = labels.numpy()
+        return input_ids, labels, start_pos, end_positions, len_q
+    
 
 def pad_sequence(token_ids: Union[torch.Tensor, np.ndarray], max_length: int, pad_token_id: int) -> torch.Tensor:
     token_instance = token_ids  # Store the original token_ids instance
@@ -160,6 +196,7 @@ def get_data(
         "easy_task": kwargs.get("easy_task", False),
         "pad_all_answers": kwargs.get("pad_all_answers", True)
     }
+    print("params", params)
     train = FinQADataset(train, **params)
     test = FinQADataset(test, **params)
     val = FinQADataset(val, **params)

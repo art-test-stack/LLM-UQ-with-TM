@@ -18,19 +18,7 @@ from torch.optim.lr_scheduler import StepLR
 import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp import fully_shard
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    CPUOffload,
-    BackwardPrefetch,
-    FullOptimStateDictConfig,
-    FullStateDictConfig,
-    ShardingStrategy
-)
-from torch.distributed.fsdp.wrap import (
-    transformer_auto_wrap_policy,
-    enable_wrap,
-    wrap,
-)
+from torch.utils.data import Sampler
 from torch.utils.data.distributed import DistributedSampler
 from torch.distributed.fsdp.wrap import (
     size_based_auto_wrap_policy,
@@ -78,8 +66,10 @@ def train_llm_pipeline(rank, world_size, args):
     
     # Initialize the process group
     print("rank", rank)
-    setup(rank, world_size)
-
+    if not args.no_cuda:
+        setup(rank, world_size)
+    else:
+        rank = get_device()
     # Load parameters
     with open(args.params_file, "r") as file:
         params = yaml.safe_load(file)
@@ -101,24 +91,32 @@ def train_llm_pipeline(rank, world_size, args):
         # "max_a_length": model_params["config"]["max_a_len"], # TODO: TEMPORARY
         **data_params
     }
-    start_pos = dataset_params["max_length"] - dataset_params["max_a_length"]
+    # start_pos = dataset_params["max_length"] - dataset_params["max_a_length"]
 
     print("Load FinQADataset...")
     train, test, val = get_data(**dataset_params)
     
-    sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=False)
-    sampler2 = DistributedSampler(val, rank=rank, num_replicas=world_size, shuffle=False)
-    sampler3 = DistributedSampler(test, rank=rank, num_replicas=world_size)
+    if not args.no_cuda:
+        sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=False)
+        sampler2 = DistributedSampler(val, rank=rank, num_replicas=world_size, shuffle=False)
+        sampler3 = DistributedSampler(test, rank=rank, num_replicas=world_size)
 
-    train_kwargs = { 'batch_size': training_params["batch_size"], 'sampler': sampler1 }
-    test_kwargs = { 'batch_size': training_params["test_batch_size"], 'sampler': sampler2 }
-    cuda_kwargs = {
-        'num_workers': 0,
-        'pin_memory': True,
-        # 'shuffle': True
-    }
-    train_kwargs.update(cuda_kwargs)
-    test_kwargs.update(cuda_kwargs)
+        train_kwargs = { 'batch_size': training_params["batch_size"], 'sampler': sampler1 }
+        test_kwargs = { 'batch_size': training_params["test_batch_size"], 'sampler': sampler2 }
+        cuda_kwargs = {
+            'num_workers': 0,
+            'pin_memory': True,
+            # 'shuffle': True
+        }
+        train_kwargs.update(cuda_kwargs)
+        test_kwargs.update(cuda_kwargs)
+    else:
+        sampler1 = None
+        sampler2 = None
+        sampler3 = None
+        train_kwargs = { 'batch_size': training_params["batch_size"], 'shuffle': True }
+        test_kwargs = { 'batch_size': training_params["test_batch_size"], 'shuffle': False }
+
     print("FinQADataset loaded!")
     
     if args.verbose:
@@ -137,7 +135,8 @@ def train_llm_pipeline(rank, world_size, args):
         
         print("Model layers:", model)
 
-    torch.cuda.set_device(rank)
+    if not args.no_cuda:
+        torch.cuda.set_device(rank)
     # Wrap the model with FSDP
     # TODO: add DDP wrapper
     if world_size > 1:
@@ -176,7 +175,7 @@ def train_llm_pipeline(rank, world_size, args):
 
     # Initialize evaluation task and CSV object
     eval_task = EvalTask(tokenizer=tokenizer)
-    csv_path = os.getenv(lctm_params["uq_path"]) + f"_{model_params['name']}"
+    csv_path = os.getenv(lctm_params["uq_path"]) + f"_{model_params['name']}.{args.train_mode}"
     print("CSV path:", csv_path)
     csv_object = InputCSV(
         model=model, 
@@ -200,7 +199,8 @@ def train_llm_pipeline(rank, world_size, args):
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.pad_token_id,
-        start_pos=start_pos
+        no_cuda=args.no_cuda,
+        training_type=args.train_mode,
     )
     # Model checkpoint saving, by saving to the rank0 CPU
     # https://pytorch.org/tutorials/intermediate/FSDP_adavnced_tutorial.html#model-checkpoint-saving-by-streaming-to-the-rank0-cpu

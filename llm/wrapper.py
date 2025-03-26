@@ -11,10 +11,12 @@ def fsdp_wrapper(
         model: nn.Module,
         model_block_cls: nn.Module,
         sharding_strategy: ShardingStrategy = ShardingStrategy.FULL_SHARD,
-        device_id: int = torch.cuda.current_device(),
+        device_id: int = 0,
     ):
+    if not torch.cuda.is_available():
+        return model
     print("Load FSDP wrapper...")
-    
+    device_id = torch.cuda.current_device()
     transformer_auto_wrapper_policy = functools.partial(
         transformer_auto_wrap_policy,
         transformer_layer_cls={

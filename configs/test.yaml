@@ -1,5 +1,5 @@
 model:
-  name: "easy-glove"
+  name: "test.model"
   type: "torch"
   tokenizer: "glove.6B.300d"
   config:
@@ -7,19 +7,19 @@ model:
     # model_size: 512
     # dim_ffn: 1024
     # nhead: 16
-    num_layers: 6
-    model_size: 512
-    dim_ffn: 1024
-    nhead: 8
+    num_layers: 1
+    model_size: 8
+    dim_ffn: 16
+    nhead: 2
     dropout: 0.1
-    max_seq_len: 512
+    max_seq_len: 5
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
 
 training:
   batch_size: 4
   test_batch_size: 16
-  epochs: 3000
+  epochs: 2
   learning_rate: 1e-4
   step_size: 20
   gamma: 0.7
@@ -29,13 +29,13 @@ training:
   betas: [0.9, 0.999]
   optimizer: "adamw"
   loss_function: "cross_entropy"
-  # type: "normal" # or "iter"
+  # type: "iter" # or "normal"
 
 data:
   short_answer: True
   easy_task: True
   hint: True
-  max_a_length: 8
+  max_a_length: 2
 
 lctm:
   uq_path: "CSV_PATH"

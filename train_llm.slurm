@@ -25,5 +25,5 @@ source ${PIP_DIR}
 python -c "import torch; print(torch.__version__, torch.version.cuda)"
 nvidia-smi
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True\
-    python main_llm_train.py --save-model --verbose --params_file=${PARAMS_FILE}
+    python main_llm_train.py --save-model --verbose --params_file=${PARAMS_FILE} --train-mode=${TRAIN_MODE}
 # python main_llm_train.py --save-model --verbose --params_file=${PARAMS_FILE}

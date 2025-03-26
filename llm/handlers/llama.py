@@ -120,7 +120,7 @@ class TokenizerHandler:
 #     output = self.output(h).float()
 #     return output
 
-def llama_forward(self, src: torch.Tensor, start_pos: int):
+def llama_forward(self, src: torch.Tensor, start_pos: int = 1, mask: torch.Tensor = None):
     _bsz, seq_len = src.shape
     device = src.device
     h = self.tok_embeddings(src)
@@ -128,17 +128,16 @@ def llama_forward(self, src: torch.Tensor, start_pos: int):
     self.freqs_cis = self.freqs_cis.to(h.device)
     freqs_cis = self.freqs_cis[:seq_len] 
 
-    mask = None
+    if mask is None:
+        if seq_len > 1:
+            mask = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=start_pos-1)
+            mask[seq_len - start_pos + 1:,:] = torch.zeros(start_pos - 1, seq_len, device=device)
+            mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+            
+            if mask.device.type == "mps":
+                mask = torch.nan_to_num(mask, nan=0.0)
 
-    if seq_len > 1:
-        mask = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=start_pos-1)
-        mask[seq_len - start_pos + 1:,:] = torch.zeros(start_pos - 1, seq_len, device=device)
-        mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-        
-        if mask.device.type == "mps":
-            mask = torch.nan_to_num(mask, nan=0.0)
-
-        mask = mask.type_as(h)
+            mask = mask.type_as(h)
 
     for layer in self.layers:
         h = layer(h, 0, freqs_cis, mask)

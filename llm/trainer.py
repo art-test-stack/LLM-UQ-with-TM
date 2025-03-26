@@ -1,8 +1,9 @@
 from tm_data.preprocessing import InputCSV
+from llm.handlers.handler import ModelType
 from llm.confidence import ConfidenceScore
 from llm.utils import EarlyStopping
 from llm.eval import compute_accuracy, compute_f1
-from utils import get_cuda_allocation
+from utils import get_cuda_allocation, get_device
 
 
 import torch
@@ -17,6 +18,15 @@ from pathlib import Path
 
 import math
 import pickle
+import time
+
+from enum import Enum
+
+
+class TrainingType(Enum):
+    BATCH = "batch"
+    ITER = "iter"
+
 
 class Trainer:
     """
@@ -50,7 +60,6 @@ class Trainer:
             eval_task: Callable = None,
             eval_confidence: Callable = None,
             lr_scheduler: optim.lr_scheduler = None,
-            start_pos: int = 0,
             **kwargs
         ) -> None:
         self.model = model
@@ -60,8 +69,14 @@ class Trainer:
         self.rank = rank
         self.world_size = world_size
 
-        self.name = kwargs.get("name", "model")
         self.model_type = kwargs.get("model_type", "torch")
+        self.no_cuda = kwargs.get("no_cuda", False)
+
+        training_type = kwargs.get("training_type", "normal")
+        assert training_type in TrainingType._value2member_map_, "Training type not supported. Choose between 'normal' and 'iter'"
+        self.training_type = TrainingType(training_type)
+
+        self.name = kwargs.get("name", "model") + f".{self.training_type.value}"
 
         model_dir = kwargs.get("model_dir", "models/")
         self.model_dir = Path(model_dir).joinpath(self.name)
@@ -71,7 +86,6 @@ class Trainer:
         self.eos_token_id = kwargs.get("eos_token_id", 0)
         self.pad_token_id = kwargs.get("pad_token_id", 0)
 
-        self.start_pos = start_pos
         self.verbose = True
 
         self.csv_object = csv_object
@@ -130,36 +144,37 @@ class Trainer:
         val_loader = DataLoader(val_set, **val_kwargs)
 
         early_stopping = EarlyStopping(patience=patience, min_delta=min_delta)
+        
+        compute_train_loss, compute_val_loss = self._get_train_val_loops()
+        print("Training type: ", self.training_type)
 
         get_cuda_allocation(verbose=True)
         print("Start training")
-        with tqdm(range(epochs), unit="epoch", disable=not verbose or not self.rank==0) as tepoch:
+        disable = (not verbose) or not (self.rank==0 or get_device().type == "mps")
+        with tqdm(range(epochs), unit="epoch", disable=disable) as tepoch:
             for epoch in tepoch:
-                # get_cuda_allocation(verbose=True)
-                # print(torch.cuda.memory_summary(device=0, abbreviated=False))
                 if self.csv_object:
                     self.csv_object.update_hyperparameters(epoch, batch_size)
 
-                torch.cuda.empty_cache()
+                if not self.no_cuda:
+                    torch.cuda.empty_cache()
                 if "sampler" in train_kwargs.keys():
                     train_kwargs["sampler"].set_epoch(epoch)
-                import time
 
-                train_ep_loop, val_ep_loop = self._get_train_val_loops()
                 t1 = time.time()
-                train_loss = train_ep_loop(train_loader)
+                train_loss = compute_train_loss(train_loader)
                 t2 = time.time()
                 dt_train_ep = f"{t2 - t1:.2f}"
 
                 t1 = time.time()
-                val_loss = val_ep_loop(val_loader)
+                val_loss = compute_val_loss(val_loader)
                 t2 = time.time()
                 dt_val_ep = f"{t2 - t1:.2f}"
 
                 self.lr_scheduler.step()
                 
                 confidence_score = math.exp(self.eval_conf.get())
-                if self.rank == 0:
+                if self.rank == 0 or get_device().type == "mps":
                     losses = {
                         "train": train_loss,
                         "test": val_loss
@@ -171,7 +186,7 @@ class Trainer:
                 self.history["val_loss"].append(val_loss)
                 self.history["confidence"].append(confidence_score)
 
-                if self.rank == 0:
+                if self.rank == 0 or get_device().type == "mps":
                     tepoch.set_postfix(
                         loss = self.history["train_loss"][-1],
                         val_loss = self.history["val_loss"][-1],
@@ -188,13 +203,12 @@ class Trainer:
                         self.save_modelcheckpoint(best=True)
                     else:
                         self.save_model(best=True)
-                torch.cuda.empty_cache()
+                if self.no_cuda:
+                    torch.cuda.empty_cache()
                 if early_stopping.early_stop:
                     print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}") if self.rank == 0 else None
                     break
                 
-        # if self.rank == 0:
-        #     self.save_model()
                 if epoch % 20 == 0:    
                     if self.world_size > 1:
                         self.save_modelcheckpoint()
@@ -204,10 +218,22 @@ class Trainer:
                     with open(self.model_dir / "history.pickle", 'wb') as handle:
                         pickle.dump(self.history, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+
     def _get_train_val_loops(self):
         if self.model_type == "hgface":
-            return self._train_hgface_epoch, self._val_hgface_epoch
-        return self._iter_train_epoch, self._iter_val_epoch
+            if self.training_type == TrainingType.BATCH:
+                return self._train_hgface_epoch, self._val_hgface_epoch
+            else:
+                Warning("Only batch training is supported for hgface models. Continuing with batch training.")
+                return self._train_hgface_epoch, self._val_hgface_epoch
+        else:
+            if self.training_type == TrainingType.BATCH:
+                return self._train_epoch, self._val_epoch
+            elif self.training_type == TrainingType.ITER:
+                return self._iter_train_epoch, self._iter_val_epoch
+            else:
+                raise NotImplementedError(f"Training type {self.training_type} not supported.")
+            
 
     def _train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()
@@ -215,42 +241,90 @@ class Trainer:
         start_pos = self.start_pos
         vocab_size = self.model.vocab_size
 
+        epoch_accuracies = []
         for i, batch in enumerate(train_loader):
             input_ids = batch["input_ids"].to(self.rank)
             labels = batch["labels"].to(self.rank)
             start_pos = batch["start_positions"].min().to(self.rank)
+            mask = batch["mask"].to(self.rank)
             
             del batch
             assert not torch.isnan(input_ids).any(), "NaN found in sources!"
 
-            # Forward pass (entire sequence at once)
             with torch.autocast(device_type="cuda", dtype=torch.float32):
-                output = self.model(input_ids, start_pos) 
-                loss = self.loss_fn(output.view(-1, vocab_size), input_ids[:, 1:].reshape(-1))
+                output = self.model(input_ids, mask=mask)[:, start_pos:]
+                del mask
+                loss = self.loss_fn(output.reshape(-1, vocab_size), labels.reshape(-1))
                 loss = loss / accumulation_steps
             
             loss.backward()
 
-            batch_accuracy = compute_accuracy(labels[:, 1:].reshape(-1), output[:, start_pos:].view(-1, vocab_size))
-            self.history["accuracy_train"].append(batch_accuracy)
+            batch_accuracy = compute_accuracy(labels.reshape(-1), output.reshape(-1, vocab_size))
+            epoch_accuracies.append(batch_accuracy)
 
-            _sz = labels.size(0)
-            del input_ids, labels, output
+            ddp_loss[0] += loss.item()
+            ddp_loss[1] += labels.numel()
 
-            if self.csv_object:
-                self.csv_object.update_model()
+            del input_ids, labels, output, loss
+
             if (i + 1) % accumulation_steps == 0:
+                if self.csv_object:
+                    self.csv_object.update_model()
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()
                 
-            ddp_loss[0] += loss.item()
-            ddp_loss[1] += _sz
-        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
-        torch.cuda.empty_cache()
+        self.history["accuracy_train"].append(sum(epoch_accuracies) / len(epoch_accuracies))
+        if not self.no_cuda and self.world_size > 1:
+            dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+            torch.cuda.empty_cache()
         train_loss = ddp_loss[0] / ddp_loss[1]
 
         return float(train_loss.cpu().numpy())
+    
+
+    def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
+        self.model.eval()
+        ddp_loss = torch.zeros(2, device=self.rank)
+        epoch_accuracies = []
+        with torch.no_grad():
+            for batch in val_loader:
+                input_ids = batch["input_ids"].to(self.rank)
+                labels = batch["labels"].to(self.rank)
+                mask = batch["mask"].to(self.rank)
+                start_pos = batch["start_positions"].min().to(self.rank)
+
+                del batch
+                assert not torch.isnan(input_ids).any(), "NaN found in sources!"
+                vocab_size = self.model.vocab_size
+
+                with torch.autocast(device_type=f"cuda", dtype=torch.float32):
+                    output = self.model(input_ids, mask=mask)[:,start_pos:]
+                    logits = output.reshape(-1, vocab_size)
+
+                    loss = self.loss_fn(logits, labels.reshape(-1))
+
+                epoch_accuracies.append(
+                    compute_accuracy(labels.reshape(-1), output.reshape(-1, vocab_size)))
+                
+                if self.eval_task:
+                    self.eval_task.update(refs=labels, preds=output.argmax(dim=-1))
+                self.eval_conf.update(output)
+
+                ddp_loss[0] += loss.item()
+                ddp_loss[1] += labels.numel()
+
+                del labels, output, logits, input_ids, mask
+
+        self.history["accuracy_val"].append(sum(epoch_accuracies) / len(epoch_accuracies))
+        
+        if not self.no_cuda and self.world_size > 1:
+            dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+            torch.cuda.empty_cache()
+
+        val_loss = ddp_loss[0] / ddp_loss[1]
+
+        return float(val_loss.cpu().numpy())
     
     def _iter_train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()
@@ -263,46 +337,49 @@ class Trainer:
             labels = batch["labels"].to(self.rank)
             start_pos = batch["start_positions"].min().to(self.rank)
             end_positions = batch["end_positions"].to(self.rank)
+            mask = batch["mask"].to(self.rank)
 
             del batch
             assert not torch.isnan(input_ids).any(), "NaN found in sources!"
 
             batch_accuracies = []
-            total_loss = 0 
-            for idx in range(end_positions.max() - start_pos):
-                with torch.autocast(device_type="cuda", dtype=torch.float32):
-                    output = self.model(input_ids[:, :start_pos + idx], 1) 
-                    output = output.reshape(-1, vocab_size)
-                    
-                    loss = self.loss_fn(output.reshape(-1, vocab_size), input_ids[:, 1: start_pos + idx + 1].reshape(-1))
-                    loss = loss / (end_positions.max() - start_pos) 
-                    
+            logits = torch.zeros((labels.size(0), labels.size(1), vocab_size), device=self.rank)
+
+            for idx in range((end_positions.max() - start_pos - 1)):
+                # with torch.autocast(device_type="cuda", dtype=torch.float32):
+                output = self.model(input_ids[:, :start_pos + idx], mask=mask[:, :start_pos + idx, :start_pos + idx])[:, -1]
+                loss = self.loss_fn(output.reshape(-1, vocab_size), labels[:,idx].reshape(-1))
+                loss = loss
+                logits[:, idx] = output
                 loss.backward()  # Backpropagate at each step
                 
-                total_loss += loss.item() / (end_positions.max() - start_pos)
+                ddp_loss[0] += loss.item() 
                 del loss
+
                 batch_accuracy = compute_accuracy(
-                    labels[:, start_pos + idx + 1].reshape(-1), 
-                    output[:,start_pos + idx].reshape(-1, vocab_size)
+                    labels.reshape(-1), 
+                    logits.reshape(-1, vocab_size)
                 )
                 batch_accuracies.append(batch_accuracy)
 
-            epoch_accuracies.append(sum(batch_accuracy) / len(batch_accuracies))
+            ddp_loss[1] += labels.numel()
+            del mask, input_ids, output, labels, logits
+            epoch_accuracies.append(sum(batch_accuracies) / len(batch_accuracies))
 
             if (i + 1) % accumulation_steps == 0:
+                if self.csv_object:
+                    self.csv_object.update_model()
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()
 
-            ddp_loss[0] += total_loss * accumulation_steps 
-            ddp_loss[1] += labels.size(0)
-
-            del input_ids, labels, output
-
+        ddp_loss[0] *= accumulation_steps 
         self.history["accuracy_train"].append(sum(epoch_accuracies) / len(epoch_accuracies))
 
-        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
-        torch.cuda.empty_cache()
+        if not self.no_cuda and self.world_size > 1:
+            dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+            torch.cuda.empty_cache()
+
         train_loss = ddp_loss[0] / ddp_loss[1]
 
         return float(train_loss.cpu().numpy())
@@ -321,83 +398,50 @@ class Trainer:
                 labels = batch["labels"].to(self.rank)
                 start_pos = batch["start_positions"].min().to(self.rank)
                 end_positions = batch["end_positions"].to(self.rank)
+                mask = batch["mask"].to(self.rank)
 
                 del batch
                 assert not torch.isnan(input_ids).any(), "NaN found in sources!"
                 batch_accuracies = []
 
-                preds = torch.zeros((labels.size(0), labels.size(1) - 1, vocab_size), device=self.rank)
-                for idx in range(end_positions.max() - start_pos):
+                logits = torch.zeros((labels.size(0), labels.size(1), vocab_size), device=self.rank)
+                for idx in range(end_positions.max() - start_pos - 1):
                     with torch.autocast(device_type="cuda", dtype=torch.float32):
-                        output = self.model(input_ids[:, :start_pos + idx], 1)[:, -1]
-                        preds[:, idx] = output.argmax(dim=-1)
-                        output = output.reshape(-1, vocab_size)
+                        output = self.model(input_ids[:, :start_pos + idx], mask=mask[:,:start_pos + idx, :start_pos + idx])[:, -1]
+                        logits[:, idx] = output
                         
-                        loss = self.loss_fn(output.reshape(-1, vocab_size), labels[:, idx + 1].reshape(-1))
-                        loss = loss / (end_positions.max() - start_pos) 
+                        loss = self.loss_fn(output.reshape(-1, vocab_size), labels[:, idx].reshape(-1))
+                        # loss = loss / (end_positions.max() - start_pos) 
                         
-                    ddp_loss[0] += loss.item() / (end_positions.max() - start_pos)
+                    ddp_loss[0] += loss.item() # / (end_positions.max() - start_pos)
 
                     self.eval_conf.update(output)
-                    del input_ids, loss
+                    
                     batch_accuracy = compute_accuracy(
-                        labels[:, start_pos + idx + 1].reshape(-1), 
-                        output[:,start_pos + idx].reshape(-1, vocab_size)
+                        labels.reshape(-1), 
+                        logits.reshape(-1, vocab_size)
                     )
-                    del output
                     batch_accuracies.append(batch_accuracy)
+                    del output, loss
 
                 if self.eval_task:
-                    self.eval_task.update(refs=labels[:,1:], preds=preds)
+                    self.eval_task.update(refs=labels, preds=logits.argmax(dim=-1))
                 
                 ddp_loss[1] += labels.numel()
                 
-                del labels, preds
-                epoch_accuracies.append(sum(batch_accuracy) / len(batch_accuracies))
+                # del labels, preds
+                epoch_accuracies.append(sum(batch_accuracies) / len(batch_accuracies))
 
-            self.history["accuracy_train"].append(sum(epoch_accuracies) / len(epoch_accuracies))
+            self.history["accuracy_val"].append(sum(epoch_accuracies) / len(epoch_accuracies))
                 
-        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+        if not self.no_cuda and self.world_size > 1:
+            dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
+            torch.cuda.empty_cache()
         val_loss = ddp_loss[0] / ddp_loss[1]
 
         return float(val_loss.cpu().numpy())
     
     
-    def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
-        self.model.eval()
-        ddp_loss = torch.zeros(2, device=self.rank)
-        start_pos = self.start_pos
-        epoch_accuracies = []
-        with torch.no_grad():
-            for seq in val_loader:
-                assert not torch.isnan(seq).any(), "NaN found in sources!"
-                seq = seq.to(self.rank)
-                vocab_size = self.model.vocab_size
-                labels = seq[:,start_pos:].reshape(-1)
-
-                with torch.autocast(device_type=f"cuda", dtype=torch.float32):
-                    output = self.model(seq, start_pos)[:,start_pos:]
-                    logits = output.reshape(-1, vocab_size)
-
-                    loss = self.loss_fn(logits, labels)
-
-                epoch_accuracies.append(
-                    compute_accuracy(labels, logits))
-                
-                if self.eval_task:
-                    self.eval_task.update(refs=seq, preds=output.argmax(dim=-1))
-                self.eval_conf.update(output)
-
-                ddp_loss[0] += loss.item()
-                ddp_loss[1] += labels.numel()
-
-                del labels, seq, output, logits
-
-        self.history["accuracy_val"].append(sum(epoch_accuracies) / len(epoch_accuracies))
-        dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
-        val_loss = ddp_loss[0] / ddp_loss[1]
-
-        return float(val_loss.cpu().numpy())
     
     @DeprecationWarning
     def _train_epoch_last(self, train_loader, accumulation_steps: int = 1) -> float:
@@ -439,22 +483,27 @@ class Trainer:
 
         return float(train_loss.cpu().numpy())
     
-    @PendingDeprecationWarning
     def _train_hgface_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
         start_pos = self.start_pos
         vocab_size = self.model.vocab_size
 
-        for i, seq in enumerate(train_loader):
-            assert not torch.isnan(seq).any(), "NaN found in sources!"
-            seq = seq.to(self.rank)
-            labels = seq[:,start_pos:].reshape(-1)
+        for idx, batch in enumerate(train_loader):
+            input_ids = batch["input_ids"].to(self.rank)
+            labels = batch["labels"].to(self.rank)
+            start_pos = batch["start_positions"].min().to(self.rank)
+            end_positions = batch["end_positions"].to(self.rank)
+            attention_mask = batch["attention_mask"].to(self.rank)
+
+            del batch
+            assert not torch.isnan(input_ids).any(), "NaN found in sources!"
 
             with torch.autocast(device_type=f"cuda", dtype=torch.float32):
-                output = self.model(seq, start_pos)[:,start_pos:].reshape(-1, vocab_size)
-                loss = self.loss_fn(output, labels)
+                output = self.model(input_ids, attention_mask=attention_mask, start_positions=start_pos, end_positions=end_positions)
+                loss = output.loss
 
+            logits = output.logits
             self.history["accuracy_train"].append(compute_accuracy(labels, output))
             # self.history["f1_train"].append(compute_f1(labels, output))
 
