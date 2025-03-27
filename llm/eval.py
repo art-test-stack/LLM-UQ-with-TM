@@ -35,7 +35,7 @@ class Evaluate:
         self.best_metric = None
         self.seq_len = seq_len
         self.rank = rank
-        
+        self.intermediate_results = None
         self.init_metrics(metrics)
         self._get_results_format()
         self.reset()
@@ -77,13 +77,11 @@ class Evaluate:
         self.preds.append(preds)
         self.refs.append(refs)
 
-
     @torch.inference_mode()
-    def compute(self, refs=None, preds=None, reset=True):
+    def compute(self):
         results = {}
-        if preds and refs:
-            self.update(refs=refs, preds=preds)
-        
+        if len(self.refs) == 0:
+            return results
         if isinstance(self.refs, list) and len(self.refs) > 1:
             self.refs = torch.cat(self.refs).to(device=self.rank)
             self.preds = torch.cat(self.preds).to(device=self.rank)
@@ -98,8 +96,6 @@ class Evaluate:
                 results[metric] = getattr(self, f"_{metric}").compute(references=self.refs, predictions=self.preds)
             else:
                 raise ValueError(f"Invalid sample type: {stype}")
-        if reset:
-            self.reset()
 
         res = results.copy()
         for key, value in res.items():
@@ -107,23 +103,33 @@ class Evaluate:
                 for k in range(len(value)):
                     results[f"{key}_{k}"] = float(value[k])
                 del results[key]
-            
+        if self.intermediate_results is not None:
+            for key, value in results.items():
+                self.intermediate_results[key].append(value)
+                results[key] = sum(self.intermediate_results[key]) / len(self.intermediate_results[key])
+        self.results = results
+        self.reset_tensor()
         return results
     
     def __call__(self, refs, preds, tokenized = True):
         self.update(refs, preds, tokenized=tokenized)
-        return self.compute(reset=False)
-        
-    def reset(self):
+        return self.compute()
+    
+    def reset_tensor(self):
         del self.preds, self.refs
         torch.cuda.empty_cache()
         self.preds = []
         self.refs = []
 
+    def reset(self):
+        self.reset_tensor()
+        self.results = {}
+        self.intermediate_results = { key: [] for key in self.result_keys }
+
     def _get_results_format(self):
         self.refs = torch.randint(0, 100, (1, 10), device=self.rank)
         self.preds = torch.rand(1, 10, 100, device=self.rank)
-        results = self.compute(reset=True)
+        results = self.compute()
         self.result_keys = []
         for key, value in results.items():
             if isinstance(value, list):

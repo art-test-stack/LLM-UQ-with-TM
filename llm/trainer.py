@@ -270,7 +270,11 @@ class Trainer:
                 
             loss.backward()
 
-            self.eval_train.update(refs=labels, preds=output)
+            if self.eval_train:
+                self.eval_train.update(refs=labels, preds=output)
+            if self.eval_train and i % 10 == 0:
+                self.eval_val.compute()
+
             ddp_loss[0] += loss.item()
             ddp_loss[1] += labels.numel()
 
@@ -297,7 +301,7 @@ class Trainer:
         ddp_loss = torch.zeros(2, device=self.rank)
         
         with torch.no_grad():
-            for batch in val_loader:
+            for idx, batch in enumerate(val_loader):
                 input_ids = batch["input_ids"].to(self.rank)
                 labels = batch["labels"].to(self.rank)
                 mask = batch["mask"].to(self.rank)
@@ -315,6 +319,9 @@ class Trainer:
                 
                 if self.eval_val:
                     self.eval_val.update(refs=labels, preds=output)
+                
+                if self.eval_val and idx % 10 == 0:
+                    self.eval_val.compute()
 
                 ddp_loss[0] += loss.item()
                 ddp_loss[1] += labels.numel()
