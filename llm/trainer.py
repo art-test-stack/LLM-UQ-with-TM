@@ -189,7 +189,7 @@ class Trainer:
                 if self.rank == 0 or get_device().type == "mps":
                     tepoch.set_postfix(
                         loss = self.history["train_loss"][-1],
-                        val_loss = self.history["val_loss"][-1],
+                        loss_val = self.history["val_loss"][-1],
                         confidence = confidence_score,
                         accuracy_train = self.history["accuracy_train"][-1],
                         accuracy_val = self.history["accuracy_val"][-1],
@@ -238,7 +238,6 @@ class Trainer:
     def _train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
-        start_pos = self.start_pos
         vocab_size = self.model.vocab_size
 
         epoch_accuracies = []
@@ -255,8 +254,8 @@ class Trainer:
                 output = self.model(input_ids, mask=mask)[:, start_pos:]
                 del mask
                 loss = self.loss_fn(output.reshape(-1, vocab_size), labels.reshape(-1))
-                loss = loss / accumulation_steps
-            
+                loss = loss
+                
             loss.backward()
 
             batch_accuracy = compute_accuracy(labels.reshape(-1), output.reshape(-1, vocab_size))
@@ -280,7 +279,7 @@ class Trainer:
             torch.cuda.empty_cache()
         train_loss = ddp_loss[0] / ddp_loss[1]
 
-        return float(train_loss.cpu().numpy())
+        return float(train_loss.cpu().numpy() / accumulation_steps)
     
 
     def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
@@ -447,7 +446,7 @@ class Trainer:
     def _train_epoch_last(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
-        start_pos = self.start_pos
+        start_pos = 0
         vocab_size = self.model.vocab_size
 
         for i, seq in enumerate(train_loader):
@@ -486,7 +485,6 @@ class Trainer:
     def _train_hgface_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
-        start_pos = self.start_pos
         vocab_size = self.model.vocab_size
 
         for idx, batch in enumerate(train_loader):
@@ -532,7 +530,7 @@ class Trainer:
     def _val_hgface_epoch(self, val_loader: DataLoader) -> float:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)
-        start_pos = self.start_pos
+        start_pos = 0
         with torch.no_grad():
             for seq in val_loader:
                 assert not torch.isnan(seq).any(), "NaN found in sources!"
@@ -567,7 +565,7 @@ class Trainer:
     def _slow_val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)
-        start_pos = self.start_pos
+        start_pos = 0
         with torch.no_grad():
             for seq in val_loader:
                 assert not torch.isnan(seq).any(), "NaN found in sources!"

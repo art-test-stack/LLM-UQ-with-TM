@@ -59,14 +59,15 @@ class DecoderBlock(nn.Module):
             nn.Linear(dim_ffn, model_size)
         )
         self.ln2 = nn.LayerNorm(model_size)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
 
     def forward(self, x, mask=None):
         attn_output, _ = self.self_attn(x, x, x, attn_mask=mask, is_causal=True)
-        x = self.ln1(x + self.dropout(attn_output))
+        x = self.ln1(x + self.dropout1(attn_output))
 
         ff_output = self.ff(x)
-        x = self.ln2(x + self.dropout(ff_output))  
+        x = self.ln2(x + self.dropout2(ff_output))  
         
         return x
 
@@ -101,16 +102,16 @@ class LLM(Module):
         device = input_ids.device
 
         x = self.tok_embeddings(input_ids) + self.position_embedding.pe[:, :seq_len, :].to(input_ids.device) 
+
         if mask is None:
             if seq_len > 1:
                 mask = torch.tril(torch.ones(seq_len, seq_len, device=device), diagonal=start_positions - 1)
                 mask[seq_len - start_positions + 1:,:] = torch.zeros(start_positions - 1, seq_len, device=device)
                 mask = mask.masked_fill(mask == 0, True).masked_fill(mask == 1, False)
-        else:
-            if mask.shape == (batch_size, seq_len, seq_len):
+        elif mask.shape == (batch_size, seq_len, seq_len):
                 mask = mask.repeat(self.nhead, 1, 1)
                 
-        for layer in self.layers:
+        for idx, layer in enumerate(self.layers):
             x = layer(x, mask)
 
         x = self.ln_final(x)

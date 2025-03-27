@@ -120,10 +120,11 @@ class FinQADataset(Dataset):
         start_pos = self.encodings["start_positions"][idx]
         end_pos = self.encodings["end_positions"][idx]
 
-        attention_mask = np.triu(np.ones((self.max_length, self.max_length), dtype=np.int64), k=end_pos - self.max_length + 1)
+        attention_mask = np.triu(np.ones((self.max_length, self.max_length), dtype=np.int64), k=1)
         attention_mask[:,len_q:start_pos] = 1
+        attention_mask[:,end_pos:] = 1
 
-        return attention_mask.astype(np.bool)
+        return attention_mask.astype(bool)
 
     def read_data(self, data):
         # GET QUESTION AND ANSWER

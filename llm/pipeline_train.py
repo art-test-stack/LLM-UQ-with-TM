@@ -175,7 +175,7 @@ def train_llm_pipeline(rank, world_size, args):
 
     # Initialize evaluation task and CSV object
     eval_task = EvalTask(tokenizer=tokenizer)
-    csv_path = os.getenv(lctm_params["uq_path"]) + f"_{model_params['name']}.{args.train_mode}"
+    csv_path = os.getenv(lctm_params["uq_path"]) + f"_{model_params['name']}_{args.train_mode}"
     print("CSV path:", csv_path)
     csv_object = InputCSV(
         model=model, 
