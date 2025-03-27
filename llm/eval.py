@@ -38,6 +38,7 @@ class Evaluate:
         
         self.init_metrics(metrics)
         self._get_results_format()
+        self.reset()
     
     def init_metrics(self, metrics: List[str]):
         # HuggingFace metrics
@@ -70,19 +71,23 @@ class Evaluate:
             preds: torch.Tensor
                 The prediction(s) for the evaluation task
         """
-        if preds.device != self.preds.device:
-            preds = preds.cpu()
-            refs = refs.cpu()
-        
-        self.preds = torch.cat([self.preds, preds])
-        self.refs = torch.cat([self.refs, refs])
+        preds = preds.detach().cpu().half()
+        refs = refs.detach().cpu().long()
+
+        self.preds.append(preds)
+        self.refs.append(refs)
+
 
     @torch.inference_mode()
-    def compute(self, refs=None, preds=None, clean_up=True, tokenized=True):
+    def compute(self, refs=None, preds=None, reset=True):
         results = {}
         if preds and refs:
-            self.update(refs=refs, preds=preds, tokenized=tokenized)
-
+            self.update(refs=refs, preds=preds)
+        
+        if isinstance(self.refs, list) and len(self.refs) > 1:
+            self.refs = torch.cat(self.refs).to(device=self.rank)
+            self.preds = torch.cat(self.preds).to(device=self.rank)
+    
         refs_decoded = self.tokenizer.decode(self.refs)
         preds_decoded = self.tokenizer.decode(self.preds.argmax(dim=-1))
 
@@ -93,8 +98,8 @@ class Evaluate:
                 results[metric] = getattr(self, f"_{metric}").compute(references=self.refs, predictions=self.preds)
             else:
                 raise ValueError(f"Invalid sample type: {stype}")
-        if clean_up:
-            self.clean_up()
+        if reset:
+            self.reset()
 
         res = results.copy()
         for key, value in res.items():
@@ -107,16 +112,18 @@ class Evaluate:
     
     def __call__(self, refs, preds, tokenized = True):
         self.update(refs, preds, tokenized=tokenized)
-        return self.compute(clean_up=False)
+        return self.compute(reset=False)
         
-    def clean_up(self):
-        self.preds = torch.tensor([], device="cpu")
-        self.refs = torch.tensor([], device="cpu", dtype=torch.long)
+    def reset(self):
+        del self.preds, self.refs
+        torch.cuda.empty_cache()
+        self.preds = []
+        self.refs = []
 
     def _get_results_format(self):
-        self.refs = torch.randint(0, 100, (1, 10))
-        self.preds = torch.rand(1, 10, 100)
-        results = self.compute(clean_up=True, tokenized=False)
+        self.refs = torch.randint(0, 100, (1, 10), device=self.rank)
+        self.preds = torch.rand(1, 10, 100, device=self.rank)
+        results = self.compute(reset=True)
         self.result_keys = []
         for key, value in results.items():
             if isinstance(value, list):
@@ -133,6 +140,7 @@ class Accuracy:
     Args:
         padding_id: int
             The padding id to ignore while computing accuracy
+
     """
     def __init__(self, padding_id: int = 0, rank: int = 0):
         self.padding_id = padding_id 
@@ -148,9 +156,9 @@ class Accuracy:
         Compute accuracy
 
         Args:
-            references: torch.Tensor
+            references (torch.Tensor):
                 The reference tensor. Shape: (batch_size, seq_len)
-            predictions: torch.Tensor
+            predictions (torch.Tensor):
                 The prediction tensor. Shape: (batch_size, seq_len)
         Returns:
             float: Accuracy in the range [0, 1]

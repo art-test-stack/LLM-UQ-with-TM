@@ -164,21 +164,24 @@ class Trainer:
                 t2 = time.time()
                 dt_train_ep = f"{t2 - t1:.2f}"
 
+                eval_train = self.eval_train.compute()
+                self.eval_train.reset()
+
                 t1 = time.time()
                 val_loss = compute_val_loss(val_loader)
                 t2 = time.time()
                 dt_val_ep = f"{t2 - t1:.2f}"
 
-                self.lr_scheduler.step()
-                
-                eval_train = self.eval_train.compute()
                 eval_val = self.eval_val.compute()
+                self.eval_val.reset()
 
                 self.history["accuracy_train"].append(eval_train["accuracy"])
                 self.history["accuracy_val"].append(eval_val["accuracy"])
 
                 self.history["confidence_train"].append(eval_train["confidence"])
                 self.history["confidence_val"].append(eval_val["confidence"])
+
+                self.lr_scheduler.step()
 
                 if self.rank == 0 or get_device().type == "mps":
                     losses = {
@@ -279,7 +282,7 @@ class Trainer:
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()
-            break
+            
                 
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
@@ -317,7 +320,7 @@ class Trainer:
                 ddp_loss[1] += labels.numel()
 
                 del labels, output, logits, input_ids, mask
-                break
+                
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
             torch.cuda.empty_cache()
