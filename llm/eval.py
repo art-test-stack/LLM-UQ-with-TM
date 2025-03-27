@@ -3,6 +3,8 @@ import evaluate
 import torch
 from typing import Callable, List
 
+from enum import Enum
+from typing import Dict, Union
 
 possible_metrics = [
     "bleu",
@@ -11,43 +13,86 @@ possible_metrics = [
     # "f1",
     # "precision",
     # "recall",
-
 ]
 
-class EvalTask:
-    def __init__(self, tokenizer: Callable = None, metrics: List[str] = None):
+class SampleType(Enum):
+    TENSOR = "tensor"
+    STRING = "string"
+
+
+
+class Evaluate:
+    def __init__(
+            self, 
+            tokenizer: Callable = None, 
+            metrics: List[str] = possible_metrics, 
+            seq_len: int = 1024, 
+            rank: int = 0
+        ):
         assert tokenizer, "Tokenizer is required"
         self.tokenizer = tokenizer
         self.best = None
         self.best_metric = None
-        self.clean_up()
-        self.init_metrics(metrics or possible_metrics)
+        self.seq_len = seq_len
+        self.rank = rank
+        
+        self.init_metrics(metrics)
         self._get_results_format()
     
     def init_metrics(self, metrics: List[str]):
+        # HuggingFace metrics
+        self.metrics = {}
+        self._init_custom_metrics()
         for metric in metrics:
             m = evaluate.load(metric)
             m.tokenizer = self.tokenizer
             setattr(self, f"_{metric}", m)
-        self.metrics = metrics
-    
-    def update(self, refs, preds, tokenized=True):
-        if isinstance(preds, str):
-            preds = [preds]
-        if isinstance(refs, str):
-            refs = [refs]
-        if tokenized:
-            preds = self.tokenizer.decode(preds)
-            refs = self.tokenizer.decode(refs)
-        self.preds.extend(preds)
-        self.refs.extend(refs)
+        self.metrics |= { metric: SampleType.STRING for metric in metrics }
 
+    def _init_custom_metrics(self):
+        self._accuracy = Accuracy(padding_id=self.tokenizer.pad_token_id, rank=self.rank)
+        self.metrics["accuracy"] = SampleType.TENSOR
+
+        self._confidence = ConfidenceScore(padding_id=self.tokenizer.pad_token_id, rank=self.rank)
+        self.metrics["confidence"] = SampleType.TENSOR
+
+        self._perplexity = Perplexity(padding_id=self.tokenizer.pad_token_id, rank=self.rank)
+        self.metrics["perplexity"] = SampleType.TENSOR
+    
+    @torch.inference_mode()
+    def update(self, refs: torch.Tensor, preds: torch.Tensor):
+        """
+        Update the references and predictions for the evaluation task
+        
+        Args:
+            refs: torch.Tensor
+                The reference(s) for the evaluation task
+            preds: torch.Tensor
+                The prediction(s) for the evaluation task
+        """
+        if preds.device != self.preds.device:
+            preds = preds.cpu()
+            refs = refs.cpu()
+        
+        self.preds = torch.cat([self.preds, preds])
+        self.refs = torch.cat([self.refs, refs])
+
+    @torch.inference_mode()
     def compute(self, refs=None, preds=None, clean_up=True, tokenized=True):
         results = {}
         if preds and refs:
             self.update(refs=refs, preds=preds, tokenized=tokenized)
-        for metric in self.metrics:
-            results |= getattr(self, f"_{metric}").compute(references=self.refs, predictions=self.preds, )
+
+        refs_decoded = self.tokenizer.decode(self.refs)
+        preds_decoded = self.tokenizer.decode(self.preds.argmax(dim=-1))
+
+        for metric, stype in self.metrics.items():
+            if stype == SampleType.STRING:
+                results |= getattr(self, f"_{metric}").compute(references=refs_decoded, predictions=preds_decoded)
+            elif stype == SampleType.TENSOR:
+                results[metric] = getattr(self, f"_{metric}").compute(references=self.refs, predictions=self.preds)
+            else:
+                raise ValueError(f"Invalid sample type: {stype}")
         if clean_up:
             self.clean_up()
 
@@ -65,13 +110,13 @@ class EvalTask:
         return self.compute(clean_up=False)
         
     def clean_up(self):
-        self.preds = []
-        self.refs = []
+        self.preds = torch.tensor([], device="cpu")
+        self.refs = torch.tensor([], device="cpu", dtype=torch.long)
 
     def _get_results_format(self):
-        refs = ["hello"]
-        preds = ["hi"]
-        results = self.compute(refs=refs, preds=preds, clean_up=True, tokenized=False)
+        self.refs = torch.randint(0, 100, (1, 10))
+        self.preds = torch.rand(1, 10, 100)
+        results = self.compute(clean_up=True, tokenized=False)
         self.result_keys = []
         for key, value in results.items():
             if isinstance(value, list):
@@ -80,18 +125,112 @@ class EvalTask:
             else:
                 self.result_keys.append(key)
 
-def compute_accuracy(refs: torch.Tensor, preds: torch.Tensor):
-    acc = (preds.argmax(dim = -1) == refs).to(dtype = torch.float32).sum().item()
-    return acc / len(refs)
 
-def compute_f1(refs: torch.Tensor, preds: torch.Tensor):
-    vocab_size = preds.shape[-1]
-    refs = torch.nn.functional.one_hot(refs, num_classes=vocab_size)
-    preds = preds.argmax(dim=-1) 
-    tp = ((preds == 1) & (refs == 1)).sum().item()
-    fp = ((preds == 1) & (refs != 1)).sum().item()
-    fn = ((preds != 1) & (refs == 1)).sum().item()
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-    return f1
+class Accuracy:
+    """
+    Compute accuracy
+    
+    Args:
+        padding_id: int
+            The padding id to ignore while computing accuracy
+    """
+    def __init__(self, padding_id: int = 0, rank: int = 0):
+        self.padding_id = padding_id 
+        self.rank = rank
+    
+    @torch.inference_mode()
+    def compute(
+            self, 
+            references: torch.Tensor, 
+            predictions: torch.Tensor, 
+        ) -> torch.Tensor:
+        """
+        Compute accuracy
+
+        Args:
+            references: torch.Tensor
+                The reference tensor. Shape: (batch_size, seq_len)
+            predictions: torch.Tensor
+                The prediction tensor. Shape: (batch_size, seq_len)
+        Returns:
+            float: Accuracy in the range [0, 1]
+        """
+        references = references.to(device=self.rank)
+        predictions = predictions.to(device=self.rank)
+        padding_id = self.padding_id
+
+        references = references.view(-1)
+        predictions = predictions.argmax(dim=-1).view(-1)
+
+        mask = references != padding_id
+        references = references[mask]
+        predictions = predictions[mask]
+        acc = (predictions == references).to(dtype = torch.float32).mean()
+
+        return acc.item()
+    
+
+class ConfidenceScore:
+    def __init__(self, padding_id: int = 0, rank: int = 0):
+        self.padding_id = padding_id 
+        self.rank = rank
+
+    @torch.inference_mode()
+    def compute(
+        self,
+        references: torch.Tensor,
+        predictions: torch.Tensor,
+        ) -> torch.Tensor:
+        """
+        Calculate confidence score from logits and target labels, ignoring padding tokens.
+
+        Args:
+        - logits (torch.Tensor): Logits output from the model (batch_size, seq_length, vocab_size).
+        - target (torch.Tensor): Ground truth labels (batch_size, seq_length).
+        - pad_token_id (int): ID of the padding token to ignore.
+
+        Returns:
+        - confidence (float): The confidence score.
+        """
+        probs = torch.nn.functional.softmax(predictions, dim=-1)
+
+        target_probs = probs.gather(dim=-1, index=references.unsqueeze(-1)).squeeze(-1)
+
+        valid_mask = references != self.padding_id
+
+        target_probs = target_probs[valid_mask]
+
+        confidence = target_probs.mean()
+        return confidence.item()
+    
+
+class Perplexity:
+    def __init__(self, padding_id: int = 0, rank: int = 0):
+        self.padding_id = padding_id 
+        self.rank = rank
+
+    @torch.inference_mode()
+    def compute(
+        self,
+        references: torch.Tensor,
+        predictions: torch.Tensor,
+        ) -> torch.Tensor:
+        """
+        Calculate perplexity from logits and target labels, ignoring padding tokens.
+
+        Args:
+            logits (torch.Tensor): Logits output from the model (batch_size, seq_length, vocab_size).
+            target (torch.Tensor): Ground truth labels (batch_size, seq_length).
+            pad_token_id (int): ID of the padding token to ignore.
+
+        Returns:
+            perplexity (float): The perplexity score.
+        """
+        log_probs = torch.nn.functional.log_softmax(predictions, dim=-1)
+
+        target_log_probs = log_probs.gather(dim=-1, index=references.unsqueeze(-1)).squeeze(-1)
+        mask = references == self.padding_id
+        target_log_probs[mask] = 0
+        
+        perplexity = torch.exp(-target_log_probs.mean(dim=-1))  
+        return perplexity.mean().item()

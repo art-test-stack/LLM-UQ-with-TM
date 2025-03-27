@@ -82,17 +82,20 @@ class GloVeTokenizer:
             self, 
             text: str,
             add_control_tokens: bool = False,
-            padding: str = "max_length", 
+            padding: bool = True, 
             max_length: int = 1024,
             return_tensors: bool = False, 
             verbose: bool = False
         ) -> Union[List[int], List[tuple[int, str]]]:
-        token_ids = self.model.encode(text, add_special_tokens=add_control_tokens).ids
-        
+        if isinstance(text, list):
+            token_ids = [ self.model.encode(tk, add_special_tokens=False).ids for tk in text ]
+        else:
+            token_ids = self.model.encode(text, add_special_tokens=False).ids
+
         if add_control_tokens:
             token_ids = [self.bos_token_id] + token_ids + [self.eos_token_id]
 
-        if padding == "max_length":
+        if padding:
             token_ids = self.pad_sequence(token_ids, max_length)
         
         if return_tensors:
@@ -105,9 +108,13 @@ class GloVeTokenizer:
             token_ids = token_ids.tolist()
         if isinstance(token_ids[0], list):
             return [self.decode(tk) for tk in token_ids]
+        
         return self.model.decode([tk for tk in token_ids if tk != self.pad_token_id]) 
     
     def pad_sequence(self, token_ids: List[int], max_length: int) -> List[int]:
+        if isinstance(token_ids[0], list):
+            return [self.pad_sequence(tk, max_length) for tk in token_ids]
+        
         if len(token_ids) < max_length:
             return token_ids + [self.pad_token_id] * (max_length - len(token_ids))
         else:

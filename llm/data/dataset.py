@@ -120,7 +120,8 @@ class FinQADataset(Dataset):
         start_pos = self.encodings["start_positions"][idx]
         end_pos = self.encodings["end_positions"][idx]
 
-        attention_mask = np.triu(np.ones((self.max_length, self.max_length), dtype=np.int64), k=1)
+        attention_mask = np.triu(np.ones((self.max_length, self.max_length), dtype=np.int64), k=end_pos - self.max_length + 1)
+        attention_mask[:,0] = 0
         attention_mask[:,len_q:start_pos] = 1
         attention_mask[:,end_pos:] = 1
 
@@ -140,8 +141,8 @@ class FinQADataset(Dataset):
         question = data["question_text"]
         answer = data["answer_text"]
         # TOKENIZE THEM
-        input_ids = self.tokenizer(question, padding='none', return_tensors=True)
-        labels = self.tokenizer(answer, padding='none', return_tensors=True)
+        input_ids = self.tokenizer(question, padding=False, return_tensors=True)
+        labels = self.tokenizer(answer, padding=False, return_tensors=True)
 
         len_q = min(self.max_q_len, len(input_ids))
 

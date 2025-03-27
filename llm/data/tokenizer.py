@@ -100,7 +100,7 @@ class Tokenizer:
             text: str, 
             retrieve_splitted_text: bool = False, 
             add_control_tokens: bool = False, 
-            padding: str = "max_length", 
+            padding: bool = True, 
             max_length: int = 1024,
             return_tensors: bool = False
         ) -> Union[List[int], torch.Tensor, List[torch.Tensor]]:
@@ -118,7 +118,7 @@ class Tokenizer:
             text: str,
             retrieve_splitted_text: bool = False, 
             add_control_tokens: bool = False,
-            padding: str = "max_length", 
+            padding: bool = True, 
             max_length: int = 1024,
             return_tensors: bool = False, 
             verbose: bool = False
@@ -128,7 +128,7 @@ class Tokenizer:
         if add_control_tokens:
             token_ids = [self.special_tokens[CONTROL_TOKENS.start_of_text]] + token_ids + [self.special_tokens[CONTROL_TOKENS.end_of_text]]
 
-        if padding == "max_length":
+        if padding:
             token_ids = self.pad_sequence(token_ids, max_length)
         
         if return_tensors:

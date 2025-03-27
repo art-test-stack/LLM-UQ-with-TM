@@ -13,6 +13,5 @@ def hgface_handler(params):
     tokenizer = BertTokenizerFast.from_pretrained(model_path)
     model = BertForQuestionAnswering.from_pretrained(model_path)
 
-    
     return model, tokenizer, None
     

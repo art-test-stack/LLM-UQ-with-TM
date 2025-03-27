@@ -23,7 +23,7 @@ class InputData(GradStats):
     var_test_loss: float | None = None
     train_loss: float | None = None
     var_train_loss: float | None = None
-    confidence_score: float | None = None
+    # confidence_score: float | None = None
     epoch: int | None = None
     batch_size: int | None = None
 
@@ -34,14 +34,20 @@ class InputCSV:
             model: nn.Module, 
             path: Union[Path, str], 
             world_size: int = 0,
-            eval_metrics: List[str] = None
+            train_metrics: List[str] = None,
+            val_metrics: List[str] = None
         ) -> None:
         if type(path) == str:
             self.path = Path(path)
         if not self.path.suffix == '.csv':
             self.path = self.path.with_suffix('.csv')
         self.model = model
-        self.eval_metrics = eval_metrics
+
+        self.eval_metrics = [ 
+            f"{metric}_train" if metric in val_metrics else metric for metric in train_metrics 
+            ] + [ f"{metric}_val" if metric in train_metrics else metric for metric in val_metrics ]
+        self.train_metrics = train_metrics
+        self.val_metrics = val_metrics
         self.init_data()
         self.world_size = world_size
         self.last_layers = None
@@ -61,7 +67,7 @@ class InputCSV:
         )
         self.current = self.CurrentInput()
 
-    def __call__(self, losses, metrics, confidence_score) -> None:
+    def __call__(self, losses, train_metrics: Dict, val_metrics: Dict) -> None:
         assert self.current.batch_size, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
         assert self.current.epoch or self.current.epoch == 0, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
 
@@ -69,15 +75,16 @@ class InputCSV:
         self.current.var_test_loss = losses["test"] - self.last_test_loss if self.last_test_loss else losses["test"]
         self.current.train_loss = losses["train"]
         self.current.var_train_loss = losses["train"] - self.last_train_loss if self.last_train_loss else losses["train"]
+        metrics = {
+            **{f"{metric}_train" if metric in val_metrics else metric: value for metric, value in train_metrics.items()},
+            **{f"{metric}_val" if metric in train_metrics else metric: value for metric, value in val_metrics.items()}
+        }
         for metric in self.eval_metrics:
-            setattr(self.current, metric
-                , metrics[metric]
-            )
+            setattr(self.current, metric, metrics[metric])
         last_values = {
             "test_loss": losses["test"],
             "train_loss": losses["train"]
         }
-        self.current.confidence_score = confidence_score
         self.compute_grad_stats()
         # add a way to store loss variations
         self.compute_model_stats()
@@ -100,37 +107,16 @@ class InputCSV:
             grads = [ p.grad for p in self.model.parameters() if p.grad is not None ]
         grads = [ torch.clone(grad) for grad in grads ]
     
-        # for i, grad in enumerate(grads):
-        #     print(f"grad {i}.shape", grad.shape)
         self.current_grads = grads if not self.current_grads else [ grad + current for grad, current in zip(grads, self.current_grads) ]
         # print("current_grads:", self.current_grads)
 
+    @torch.inference_mode()
     def compute_grad_stats(self) -> None:
         grads = self.current_grads[0].view(-1) if len(self.current_grads) == 1 else get_concat_tensor(self.current_grads)
-        # last_layers_grads = get_last_layers(grads)
-        # all_ll_grads = get_concat_tensor(last_layers_grads)
-
-        # grads_cosine_sim = compute_cosine_similarity(all_grads, self.last_layers)
-        # self.last_layers = all_grads # [ grad_layer.copy().cpu() for grad_layer in all_grads ] 
-
-        # spectrums = get_grad_spectrums(grads)
-        # all_spectras = get_concat_tensor(spectrums)
-        # last_layers_spectrums = get_last_layers_spectrums(spectrums)
-        # all_ll_spectrums = get_concat_tensor(last_layers_spectrums)
 
         grad_mean, grad_median, grad_std, grad_max, grad_min = get_tensor_stats(grads)
-        # grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min = get_tensor_stats(all_ll_grads)
-        # spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min = get_tensor_stats(all_spectras)
-        # spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min = get_tensor_stats(all_ll_spectrums)
-
-        # spectrum_alpha, spectrum_beta = compute_beta_dist_params(spectrum_mean, spectrum_std)
-        # spectrum_ll_alpha, spectrum_ll_beta = compute_beta_dist_params(spectrum_ll_mean, spectrum_ll_std)
-
         grad_stats = GradStats(
             grad_mean, grad_median, grad_std, grad_max, grad_min,
-            # spectrum_mean, spectrum_median, spectrum_std, spectrum_max, spectrum_min, spectrum_alpha, spectrum_beta,
-            # grad_ll_mean, grad_ll_median, grad_ll_std, grad_ll_max, grad_ll_min,
-            # spectrum_ll_mean, spectrum_ll_median, spectrum_ll_std, spectrum_ll_max, spectrum_ll_min, spectrum_ll_alpha, spectrum_ll_beta
         )
         self.current_grad_stats.append(grad_stats)
 
@@ -142,12 +128,6 @@ class InputCSV:
             grad_stats.__setattr__(fn, fn_mean)
         for fn in grad_stats.__dataclass_fields__.keys():
             setattr(self.current, fn, getattr(grad_stats, fn)) 
-        # self.current = self.CurrentInput(
-        #     **{fn: getattr(grad_stats, fn) for fn in grad_stats.__dataclass_fields__.keys()},
-        #     test_loss=self.current.test_loss, var_test_loss=self.current.var_test_loss, 
-        #     train_loss=self.current.train_loss, var_train_loss=self.current.var_train_loss,
-        #     epoch=self.current.epoch, batch_size=self.current.batch_size
-        # )
 
     def update_csv(self) -> None:
         for fn in self.CurrentInput.__dataclass_fields__.keys():
@@ -166,15 +146,6 @@ class InputCSV:
     def create_csv(self, path: str) -> None:
         with open(path, 'w') as f:
             f.write(f'{",".join(self.CurrentInput.__dataclass_fields__.keys())}\n')
-    
-    # def update_csv(self, new_input: Callable, path: str) -> None:
-    #     fields = self.CurrentInput.__dataclass_fields__.keys()
-    #     path = Path(f'{path}.csv')
-    #     if not path.exists():
-    #         self.create_csv(path)
-    #     df = pd.DataFrame([{fn: getattr(new_input, fn) for fn in fields}])
-    #     df.to_csv(path, mode='a', header=False, index=False)
-
         
 def get_concat_tensor(tensor: torch.Tensor) -> torch.Tensor:
     all_tensors = torch.cat([t.view(-1) for t in tensor])

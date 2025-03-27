@@ -2,7 +2,7 @@ from llm.data.dataset import get_data
 from llm.handlers.handler import model_handler
 from llm.wrapper import fsdp_wrapper
 from llm.trainer import Trainer
-from llm.eval import EvalTask
+from llm.eval import Evaluate
 
 from tm_data.preprocessing import InputCSV
 
@@ -174,14 +174,21 @@ def train_llm_pipeline(rank, world_size, args):
     get_cuda_allocation(verbose=args.verbose)
 
     # Initialize evaluation task and CSV object
-    eval_task = EvalTask(tokenizer=tokenizer)
+    eval_train = Evaluate(tokenizer=tokenizer, seq_len=dataset_params["max_a_length"], metrics=[])
+    eval_val = Evaluate(tokenizer=tokenizer, seq_len=dataset_params["max_a_length"])
+
+    print("Evaluation task initialized.")
+    print("Train Metrics:", eval_train.result_keys)
+    print("Val Metrics:", eval_val.result_keys)
+
     csv_path = os.getenv(lctm_params["uq_path"]) + f"_{model_params['name']}_{args.train_mode}"
     print("CSV path:", csv_path)
     csv_object = InputCSV(
         model=model, 
         path=csv_path,
         world_size=world_size,
-        eval_metrics=eval_task.result_keys
+        train_metrics=eval_train.result_keys,
+        val_metrics=eval_val.result_keys,
     )
 
     # Initialize trainer
@@ -193,7 +200,8 @@ def train_llm_pipeline(rank, world_size, args):
         csv_object=csv_object,
         rank=rank,
         world_size=world_size,
-        eval_task=eval_task,
+        eval_train=eval_train,
+        eval_val=eval_val,
         name=model_params["name"],
         model_dir=os.getenv(model_params["dir"]),
         bos_token_id=tokenizer.bos_token_id,

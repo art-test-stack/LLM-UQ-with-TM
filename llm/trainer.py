@@ -1,8 +1,6 @@
 from tm_data.preprocessing import InputCSV
 from llm.handlers.handler import ModelType
-from llm.confidence import ConfidenceScore
 from llm.utils import EarlyStopping
-from llm.eval import compute_accuracy, compute_f1
 from utils import get_cuda_allocation, get_device
 
 
@@ -33,21 +31,22 @@ class Trainer:
     Trainer class for training the model.
     
     Args:
-        model: nn.Module, model to train
-        optimizer: optim.Optimizer, optimizer
+        model: nn.Module, model
+        optimizer: torch.optim.Optimizer, optimizer
         loss_fn: nn.Module, loss function
-        csv_object: InputCSV, object to save the training history
         rank: torch.device, rank of the process
-        world_size: int, number of processes
-        eval_task: Callable, evaluation task
-        eval_confidence: Callable, evaluation confidence
+        world_size: int, world size
+        csv_object: InputCSV, object for saving training metrics
+        lr_scheduler: torch.optim.lr_scheduler, learning rate scheduler
+        model_type: str, type of model
+        no_cuda: bool, no cuda
+        training_type: str, training type
         name: str, name of the model
-        model_dir: str, directory to save the model
-        lr_scheduler: optim.lr_scheduler, learning rate scheduler
-        bos_token_id: int, start of answer token
-        eos_token_id: int, end of answer token
-        pad_token_id: int, padding token
-        start_pos: int, start position of the sequence
+        model_dir: str, directory for saving the model
+        bos_token_id: int, beginning of sentence token id
+        eos_token_id: int, end of sentence token id
+        pad_token_id: int, padding token id
+        verbose: bool, verbosity
     """
     def __init__(
             self,
@@ -57,8 +56,6 @@ class Trainer:
             rank: torch.device,
             world_size: int,
             csv_object: InputCSV = None,
-            eval_task: Callable = None,
-            eval_confidence: Callable = None,
             lr_scheduler: optim.lr_scheduler = None,
             **kwargs
         ) -> None:
@@ -89,13 +86,14 @@ class Trainer:
         self.verbose = True
 
         self.csv_object = csv_object
-        self.eval_task = eval_task
-        self.eval_conf = eval_confidence or ConfidenceScore(device=self.rank)
+        self.eval_train = kwargs.get("eval_train", None)
+        self.eval_val = kwargs.get("eval_val", None)
 
         self.history = {
             "train_loss": [], 
             "val_loss": [], 
-            "confidence": [], 
+            "confidence_train": [], 
+            "confidence_val": [],
             "accuracy_train": [], 
             "accuracy_val": [],
             # "f1_train": [],
@@ -173,26 +171,38 @@ class Trainer:
 
                 self.lr_scheduler.step()
                 
-                confidence_score = math.exp(self.eval_conf.get())
+                eval_train = self.eval_train.compute()
+                eval_val = self.eval_val.compute()
+
+                self.history["accuracy_train"].append(eval_train["accuracy"])
+                self.history["accuracy_val"].append(eval_val["accuracy"])
+
+                self.history["confidence_train"].append(eval_train["confidence"])
+                self.history["confidence_val"].append(eval_val["confidence"])
+
                 if self.rank == 0 or get_device().type == "mps":
                     losses = {
                         "train": train_loss,
                         "test": val_loss
                     }
                     if self.csv_object:
-                        self.csv_object(losses, self.eval_task.compute(), confidence_score)
+                        self.csv_object(
+                            losses, 
+                            train_metrics=eval_train,
+                            val_metrics=eval_val
+                        )
 
                 self.history["train_loss"].append(train_loss)
                 self.history["val_loss"].append(val_loss)
-                self.history["confidence"].append(confidence_score)
 
                 if self.rank == 0 or get_device().type == "mps":
                     tepoch.set_postfix(
                         loss = self.history["train_loss"][-1],
                         loss_val = self.history["val_loss"][-1],
-                        confidence = confidence_score,
                         accuracy_train = self.history["accuracy_train"][-1],
                         accuracy_val = self.history["accuracy_val"][-1],
+                        confidence_train = self.history["confidence_train"][-1],
+                        confidence_val = self.history["confidence_val"][-1],
                         dt_train_epoch = dt_train_ep,
                         dt_val_epoch = dt_val_ep,
                     )
@@ -240,7 +250,6 @@ class Trainer:
         ddp_loss = torch.zeros(2).to(self.rank)
         vocab_size = self.model.vocab_size
 
-        epoch_accuracies = []
         for i, batch in enumerate(train_loader):
             input_ids = batch["input_ids"].to(self.rank)
             labels = batch["labels"].to(self.rank)
@@ -258,9 +267,7 @@ class Trainer:
                 
             loss.backward()
 
-            batch_accuracy = compute_accuracy(labels.reshape(-1), output.reshape(-1, vocab_size))
-            epoch_accuracies.append(batch_accuracy)
-
+            self.eval_train.update(refs=labels, preds=output)
             ddp_loss[0] += loss.item()
             ddp_loss[1] += labels.numel()
 
@@ -272,8 +279,8 @@ class Trainer:
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()
+            break
                 
-        self.history["accuracy_train"].append(sum(epoch_accuracies) / len(epoch_accuracies))
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
             torch.cuda.empty_cache()
@@ -285,7 +292,7 @@ class Trainer:
     def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)
-        epoch_accuracies = []
+        
         with torch.no_grad():
             for batch in val_loader:
                 input_ids = batch["input_ids"].to(self.rank)
@@ -302,21 +309,15 @@ class Trainer:
                     logits = output.reshape(-1, vocab_size)
 
                     loss = self.loss_fn(logits, labels.reshape(-1))
-
-                epoch_accuracies.append(
-                    compute_accuracy(labels.reshape(-1), output.reshape(-1, vocab_size)))
                 
-                if self.eval_task:
-                    self.eval_task.update(refs=labels, preds=output.argmax(dim=-1))
-                self.eval_conf.update(output)
+                if self.eval_val:
+                    self.eval_val.update(refs=labels, preds=output)
 
                 ddp_loss[0] += loss.item()
                 ddp_loss[1] += labels.numel()
 
                 del labels, output, logits, input_ids, mask
-
-        self.history["accuracy_val"].append(sum(epoch_accuracies) / len(epoch_accuracies))
-        
+                break
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
             torch.cuda.empty_cache()
@@ -341,7 +342,6 @@ class Trainer:
             del batch
             assert not torch.isnan(input_ids).any(), "NaN found in sources!"
 
-            batch_accuracies = []
             logits = torch.zeros((labels.size(0), labels.size(1), vocab_size), device=self.rank)
 
             for idx in range((end_positions.max() - start_pos - 1)):
@@ -355,15 +355,10 @@ class Trainer:
                 ddp_loss[0] += loss.item() 
                 del loss
 
-                batch_accuracy = compute_accuracy(
-                    labels.reshape(-1), 
-                    logits.reshape(-1, vocab_size)
-                )
-                batch_accuracies.append(batch_accuracy)
-
             ddp_loss[1] += labels.numel()
+            self.eval_train.update(refs=labels, preds=logits)
+
             del mask, input_ids, output, labels, logits
-            epoch_accuracies.append(sum(batch_accuracies) / len(batch_accuracies))
 
             if (i + 1) % accumulation_steps == 0:
                 if self.csv_object:
@@ -373,7 +368,6 @@ class Trainer:
                 self.model.zero_grad()
 
         ddp_loss[0] *= accumulation_steps 
-        self.history["accuracy_train"].append(sum(epoch_accuracies) / len(epoch_accuracies))
 
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
@@ -388,8 +382,6 @@ class Trainer:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)
         vocab_size = self.model.vocab_size
-
-        epoch_accuracies = []
         
         with torch.no_grad():
             for i, batch in enumerate(val_loader):
@@ -401,7 +393,6 @@ class Trainer:
 
                 del batch
                 assert not torch.isnan(input_ids).any(), "NaN found in sources!"
-                batch_accuracies = []
 
                 logits = torch.zeros((labels.size(0), labels.size(1), vocab_size), device=self.rank)
                 for idx in range(end_positions.max() - start_pos - 1):
@@ -410,28 +401,18 @@ class Trainer:
                         logits[:, idx] = output
                         
                         loss = self.loss_fn(output.reshape(-1, vocab_size), labels[:, idx].reshape(-1))
-                        # loss = loss / (end_positions.max() - start_pos) 
                         
-                    ddp_loss[0] += loss.item() # / (end_positions.max() - start_pos)
-
-                    self.eval_conf.update(output)
+                    ddp_loss[0] += loss.item() 
                     
-                    batch_accuracy = compute_accuracy(
-                        labels.reshape(-1), 
-                        logits.reshape(-1, vocab_size)
-                    )
-                    batch_accuracies.append(batch_accuracy)
                     del output, loss
 
-                if self.eval_task:
-                    self.eval_task.update(refs=labels, preds=logits.argmax(dim=-1))
+                if self.eval_val:
+                    self.eval_val.update(refs=labels, preds=logits)
                 
                 ddp_loss[1] += labels.numel()
-                
-                # del labels, preds
-                epoch_accuracies.append(sum(batch_accuracies) / len(batch_accuracies))
 
-            self.history["accuracy_val"].append(sum(epoch_accuracies) / len(epoch_accuracies))
+                del input_ids, labels, logits, mask
+                
                 
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
@@ -502,7 +483,6 @@ class Trainer:
                 loss = output.loss
 
             logits = output.logits
-            self.history["accuracy_train"].append(compute_accuracy(labels, output))
             # self.history["f1_train"].append(compute_f1(labels, output))
 
             loss.backward()
@@ -544,12 +524,9 @@ class Trainer:
 
                     loss = self.loss_fn(logits, labels)
 
-                self.history["accuracy_val"].append(
-                    compute_accuracy(labels, logits))
                 
-                if self.eval_task:
-                    self.eval_task.update(refs=seq, preds=output.argmax(dim=-1))
-                self.eval_conf.update(output)
+                if self.eval_val:
+                    self.eval_val.update(refs=seq, preds=output)
 
                 ddp_loss[0] += loss.item()
                 ddp_loss[1] += labels.numel()
@@ -594,13 +571,10 @@ class Trainer:
                     #     next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
                     #     del probs
 
-                self.history["accuracy_val"].append(
-                    compute_accuracy(seq[:, start_pos:].reshape(-1), all_logits.view(-1, vocab_size)))
                 # self.history["f1_val"].append(compute_f1(labels, all_logits.view(-1, vocab_size)))
 
-                if self.eval_task:
-                    self.eval_task.update(refs=seq, preds=all_logits.argmax(dim=-1))
-                self.eval_conf.update(all_logits)
+                if self.eval_val:
+                    self.eval_val.update(refs=seq, preds=all_logits)
 
                 del all_logits, seq
 
