@@ -35,7 +35,7 @@ class Evaluate:
         self.best_metric = None
         self.seq_len = seq_len
         self.rank = rank
-        self.intermediate_results = None
+        self.running_res = None
         self.has_str_values = False
         self.init_metrics(metrics)
         self._get_results_format()
@@ -73,33 +73,40 @@ class Evaluate:
             preds: torch.Tensor
                 The prediction(s) for the evaluation task
         """
-        preds = preds.detach().cpu().half()
-        refs = refs.detach().cpu().long()
+        preds = preds.detach().half()
+        refs = refs.detach().long()
 
-        self.preds.append(preds)
-        self.refs.append(refs)
+        if not hasattr(self, "running_refs"):
+            self.running_refs = refs
+            self.running_preds = preds
+        else:
+            self.running_refs = torch.cat([self.running_refs, refs], dim=0)
+            self.running_preds = torch.cat([self.running_preds, preds], dim=0)
+
+        if self.running_refs.numel() > 1e6:  # Adjust the limit as needed
+            self.compute()
+            self.reset_tensor()
 
     @torch.inference_mode()
     def compute(self):
         results = {}
-        if len(self.refs) == 0:
+        if not hasattr(self, "running_refs"):
             return results
-        if isinstance(self.refs, list) and len(self.refs) > 1:
-            self.refs = torch.cat(self.refs).to(device=self.rank)
-            self.preds = torch.cat(self.preds).to(device=self.rank)
-        else:
-            self.refs = self.refs[0].unsqueeze(0)
-            self.preds = self.preds[0].unsqueeze(0)
+        if len(self.running_refs) == 0:
+            return results
+        if len(self.running_refs) > 1:
+            self.running_refs = torch.cat(self.running_refs).to(device=self.rank)
+            self.running_preds = torch.cat(self.running_preds).to(device=self.rank)
             
         if self.has_str_values:
-            refs_decoded = self.tokenizer.decode(self.refs)
-            preds_decoded = self.tokenizer.decode(self.preds.argmax(dim=-1))
+            refs_decoded = self.tokenizer.decode(self.running_refs)
+            preds_decoded = self.tokenizer.decode(self.running_preds.argmax(dim=-1))
 
         for metric, stype in self.metrics.items():
             if stype == SampleType.STRING:
                 results |= getattr(self, f"_{metric}").compute(references=refs_decoded, predictions=preds_decoded)
             elif stype == SampleType.TENSOR:
-                results[metric] = getattr(self, f"_{metric}").compute(references=self.refs, predictions=self.preds)
+                results[metric] = getattr(self, f"_{metric}").compute(references=self.running_refs, predictions=self.running_preds)
             else:
                 raise ValueError(f"Invalid sample type: {stype}")
 
@@ -109,10 +116,10 @@ class Evaluate:
                 for k in range(len(value)):
                     results[f"{key}_{k}"] = float(value[k])
                 del results[key]
-        if self.intermediate_results is not None:
+        if self.running_res is not None:
             for key, value in results.items():
-                self.intermediate_results[key].append(value)
-                results[key] = sum(self.intermediate_results[key]) / len(self.intermediate_results[key])
+                self.running_res[key].append(value)
+                results[key] = sum(self.running_res[key]) / len(self.running_res[key])
         self.results = results
         self.reset_tensor()
         return results
@@ -122,19 +129,19 @@ class Evaluate:
         return self.compute()
     
     def reset_tensor(self):
-        del self.preds, self.refs
+        self.running_preds, self.running_refs = None, None
+        del self.running_preds, self.running_refs
         torch.cuda.empty_cache()
-        self.preds = []
-        self.refs = []
 
     def reset(self):
         self.reset_tensor()
         self.results = {}
-        self.intermediate_results = { key: [] for key in self.result_keys }
+        self.running_res = { key: [] for key in self.result_keys }
 
     def _get_results_format(self):
-        self.refs = [ torch.randint(0, 100, (1, 10), device=self.rank) ]
-        self.preds = [ torch.rand(1, 10, 100, device=self.rank) ]
+        self.running_refs = torch.randint(0, 100, (1, 10), device=self.rank)
+        self.running_preds = torch.rand(1, 10, 100, device=self.rank)
+        # self.update(self.running_refs, self.running_preds)
         results = self.compute()
         self.result_keys = []
         for key, value in results.items():
@@ -143,6 +150,7 @@ class Evaluate:
                     self.result_keys.append(f"{key}_{k}")
             else:
                 self.result_keys.append(key)
+        self.reset()
 
 
 class Accuracy:
