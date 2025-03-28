@@ -36,6 +36,7 @@ class Evaluate:
         self.seq_len = seq_len
         self.rank = rank
         self.intermediate_results = None
+        self.has_str_values = False
         self.init_metrics(metrics)
         self._get_results_format()
         self.reset()
@@ -49,6 +50,7 @@ class Evaluate:
             m.tokenizer = self.tokenizer
             setattr(self, f"_{metric}", m)
         self.metrics |= { metric: SampleType.STRING for metric in metrics }
+        self.has_str_values = SampleType.STRING in list(self.metrics.values())
 
     def _init_custom_metrics(self):
         self._accuracy = Accuracy(padding_id=self.tokenizer.pad_token_id, rank=self.rank)
@@ -85,9 +87,14 @@ class Evaluate:
         if isinstance(self.refs, list) and len(self.refs) > 1:
             self.refs = torch.cat(self.refs).to(device=self.rank)
             self.preds = torch.cat(self.preds).to(device=self.rank)
-    
-        refs_decoded = self.tokenizer.decode(self.refs)
-        preds_decoded = self.tokenizer.decode(self.preds.argmax(dim=-1))
+        else:
+            self.refs = self.refs[0]
+            self.preds = self.preds[0]
+        print("self.refs", self.refs.shape)
+        print("self.refs", self.preds.shape)
+        if self.has_str_values:
+            refs_decoded = self.tokenizer.decode(self.refs)
+            preds_decoded = self.tokenizer.decode(self.preds.argmax(dim=-1))
 
         for metric, stype in self.metrics.items():
             if stype == SampleType.STRING:

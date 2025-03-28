@@ -106,7 +106,8 @@ class GloVeTokenizer:
     def decode(self, token_ids: Union[List[int], List[List[int]], torch.Tensor, List[torch.Tensor]]) -> Union[str, List[str]]:
         if isinstance(token_ids, torch.Tensor):
             token_ids = token_ids.tolist()
-        if isinstance(token_ids[0], list):
+
+        if isinstance(token_ids[0], list) or isinstance(token_ids[0], torch.Tensor):
             return [self.decode(tk) for tk in token_ids]
         
         return self.model.decode([tk for tk in token_ids if tk != self.pad_token_id]) 

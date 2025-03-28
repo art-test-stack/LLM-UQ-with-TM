@@ -272,8 +272,8 @@ class Trainer:
 
             if self.eval_train:
                 self.eval_train.update(refs=labels, preds=output)
-            if self.eval_train and i % 10 == 0:
-                self.eval_val.compute()
+                if i % 10 == 0:
+                    self.eval_val.compute()
 
             ddp_loss[0] += loss.item()
             ddp_loss[1] += labels.numel()
@@ -287,7 +287,6 @@ class Trainer:
                 self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()
             
-                
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
             torch.cuda.empty_cache()
@@ -301,7 +300,7 @@ class Trainer:
         ddp_loss = torch.zeros(2, device=self.rank)
         
         with torch.no_grad():
-            for idx, batch in enumerate(val_loader):
+            for i, batch in enumerate(val_loader):
                 input_ids = batch["input_ids"].to(self.rank)
                 labels = batch["labels"].to(self.rank)
                 mask = batch["mask"].to(self.rank)
@@ -319,9 +318,8 @@ class Trainer:
                 
                 if self.eval_val:
                     self.eval_val.update(refs=labels, preds=output)
-                
-                if self.eval_val and idx % 10 == 0:
-                    self.eval_val.compute()
+                    if i % 10 == 0:
+                        self.eval_val.compute()
 
                 ddp_loss[0] += loss.item()
                 ddp_loss[1] += labels.numel()
@@ -341,7 +339,6 @@ class Trainer:
         ddp_loss = torch.zeros(2).to(self.rank)
         vocab_size = self.model.vocab_size
 
-        epoch_accuracies = []
         for i, batch in enumerate(train_loader):
             input_ids = batch["input_ids"].to(self.rank)
             labels = batch["labels"].to(self.rank)
@@ -366,7 +363,10 @@ class Trainer:
                 del loss
 
             ddp_loss[1] += labels.numel()
-            self.eval_train.update(refs=labels, preds=logits)
+            if self.eval_train:
+                self.eval_train.update(refs=labels, preds=logits)
+                if i % 10 == 0:
+                    self.eval_val.compute()
 
             del mask, input_ids, output, labels, logits
 
@@ -418,11 +418,12 @@ class Trainer:
 
                 if self.eval_val:
                     self.eval_val.update(refs=labels, preds=logits)
+                    if i % 10 == 0:
+                        self.eval_val.compute()
                 
                 ddp_loss[1] += labels.numel()
 
                 del input_ids, labels, logits, mask
-                
                 
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)

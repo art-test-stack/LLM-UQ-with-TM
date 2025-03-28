@@ -30,10 +30,13 @@ import argparse
 import functools
 import yaml
 
+from random import randint
 
-def setup(rank, world_size, master_port: str = f'{12355 + 10}'):
+def setup(rank, world_size, master_port: str = f'{randint(10_000,40_000)}'):
+# def setup(rank, world_size, master_port: str = f'{12355 + 10}'):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = master_port
+    print("MASTER_PORT=",master_port)
 
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
