@@ -7,8 +7,8 @@ from enum import Enum
 from typing import Dict, Union
 
 possible_metrics = [
-    "bleu",
-    "rouge",
+    # "bleu",
+    # "rouge",
     # "accuracy",
     # "f1",
     # "precision",
@@ -88,10 +88,9 @@ class Evaluate:
             self.refs = torch.cat(self.refs).to(device=self.rank)
             self.preds = torch.cat(self.preds).to(device=self.rank)
         else:
-            self.refs = self.refs[0]
-            self.preds = self.preds[0]
-        print("self.refs", self.refs.shape)
-        print("self.refs", self.preds.shape)
+            self.refs = self.refs[0].unsqueeze(0)
+            self.preds = self.preds[0].unsqueeze(0)
+            
         if self.has_str_values:
             refs_decoded = self.tokenizer.decode(self.refs)
             preds_decoded = self.tokenizer.decode(self.preds.argmax(dim=-1))
@@ -134,8 +133,8 @@ class Evaluate:
         self.intermediate_results = { key: [] for key in self.result_keys }
 
     def _get_results_format(self):
-        self.refs = torch.randint(0, 100, (1, 10), device=self.rank)
-        self.preds = torch.rand(1, 10, 100, device=self.rank)
+        self.refs = [ torch.randint(0, 100, (1, 10), device=self.rank) ]
+        self.preds = [ torch.rand(1, 10, 100, device=self.rank) ]
         results = self.compute()
         self.result_keys = []
         for key, value in results.items():
