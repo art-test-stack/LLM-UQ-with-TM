@@ -177,8 +177,8 @@ def train_llm_pipeline(rank, world_size, args):
     get_cuda_allocation(verbose=args.verbose)
 
     # Initialize evaluation task and CSV object
-    eval_train = Evaluate(tokenizer=tokenizer, seq_len=dataset_params["max_a_length"], metrics=[])
-    eval_val = Evaluate(tokenizer=tokenizer, seq_len=dataset_params["max_a_length"])
+    eval_train = Evaluate(tokenizer=tokenizer, metrics=[])
+    eval_val = Evaluate(tokenizer=tokenizer)
 
     print("Evaluation task initialized.")
     print("Train Metrics:", eval_train.result_keys)

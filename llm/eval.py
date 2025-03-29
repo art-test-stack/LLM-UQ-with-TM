@@ -24,19 +24,23 @@ class SampleType(Enum):
 class Evaluate:
     def __init__(
             self, 
+            padding_id: int = None,
             tokenizer: Callable = None, 
             metrics: List[str] = possible_metrics, 
-            seq_len: int = 1024, 
             rank: int = 0
         ):
-        assert tokenizer, "Tokenizer is required"
+        assert tokenizer or isinstance(padding_id, int), "Tokenizer or padding_id is required"
         self.tokenizer = tokenizer
+        self.padding_id = padding_id if not tokenizer else tokenizer.pad_token_id
         self.best = None
         self.best_metric = None
-        self.seq_len = seq_len
         self.rank = rank
         self.running_res = None
         self.has_str_values = False
+        self.running_preds = []
+        self.running_refs = []
+        self.running_numel = 0
+        self.result_keys = []
         self.init_metrics(metrics)
         self._get_results_format()
         self.reset()
@@ -45,21 +49,22 @@ class Evaluate:
         # HuggingFace metrics
         self.metrics = {}
         self._init_custom_metrics()
-        for metric in metrics:
-            m = evaluate.load(metric)
-            m.tokenizer = self.tokenizer
-            setattr(self, f"_{metric}", m)
+        if self.tokenizer:
+            for metric in metrics:
+                m = evaluate.load(metric)
+                m.tokenizer = self.tokenizer
+                setattr(self, f"_{metric}", m)
         self.metrics |= { metric: SampleType.STRING for metric in metrics }
         self.has_str_values = SampleType.STRING in list(self.metrics.values())
 
     def _init_custom_metrics(self):
-        self._accuracy = Accuracy(padding_id=self.tokenizer.pad_token_id, rank=self.rank)
+        self._accuracy = Accuracy(padding_id=self.padding_id, rank=self.rank)
         self.metrics["accuracy"] = SampleType.TENSOR
 
-        self._confidence = ConfidenceScore(padding_id=self.tokenizer.pad_token_id, rank=self.rank)
+        self._confidence = ConfidenceScore(padding_id=self.padding_id, rank=self.rank)
         self.metrics["confidence"] = SampleType.TENSOR
 
-        self._perplexity = Perplexity(padding_id=self.tokenizer.pad_token_id, rank=self.rank)
+        self._perplexity = Perplexity(padding_id=self.padding_id, rank=self.rank)
         self.metrics["perplexity"] = SampleType.TENSOR
     
     @torch.inference_mode()
@@ -88,8 +93,8 @@ class Evaluate:
     def compute(self):
         results = {}
         if len(self.running_refs) == 0:
-            return results
-        if len(self.running_refs) > 1:
+            return self.results(results)
+        elif len(self.running_refs) > 1:
             self.running_refs = torch.cat(self.running_refs).to(device=self.rank)
             self.running_preds = torch.cat(self.running_preds).to(device=self.rank)
         else:
@@ -119,8 +124,13 @@ class Evaluate:
                 self.running_res[key].append(value)
                 
         self.reset_tensor()
-        return { m: sum(v) / len(v) for m, v in self.running_res }
+        return self.results(results)
     
+    def results(self, results = {}):
+        if self.running_res:
+            return { m: sum(v) / len(v) if len(v) > 1 else None for m, v in self.running_res.items() }
+        return results
+
     def __call__(self, refs, preds, tokenized = True):
         self.update(refs, preds, tokenized=tokenized)
         return self.compute()
@@ -133,11 +143,14 @@ class Evaluate:
 
     def reset(self):
         self.reset_tensor()
+        self.init_running_res()
+
+    def init_running_res(self):
         self.running_res = { key: [] for key in self.result_keys }
 
     def _get_results_format(self):
-        self.running_refs = torch.randint(0, 100, (1, 10), device=self.rank)
-        self.running_preds = torch.rand(1, 10, 100, device=self.rank)
+        self.running_refs = [torch.randint(0, 100, (1, 10), device=self.rank)]
+        self.running_preds = [torch.rand(1, 10, 100, device=self.rank)]
         # self.update(self.running_refs, self.running_preds)
         results = self.compute()
         self.result_keys = []
