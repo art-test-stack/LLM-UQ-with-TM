@@ -76,27 +76,25 @@ class Evaluate:
         preds = preds.detach().half()
         refs = refs.detach().long()
 
-        if not hasattr(self, "running_refs"):
-            self.running_refs = refs
-            self.running_preds = preds
-        else:
-            self.running_refs = torch.cat([self.running_refs, refs], dim=0)
-            self.running_preds = torch.cat([self.running_preds, preds], dim=0)
+        self.running_numel += preds.numel()
+        self.running_preds.append(preds)
+        self.running_refs.append(refs)
 
-        if self.running_refs.numel() > 1e6:  # Adjust the limit as needed
+        if self.running_numel > 1e6:  # Adjust the limit as needed
             self.compute()
             self.reset_tensor()
 
     @torch.inference_mode()
     def compute(self):
         results = {}
-        if not hasattr(self, "running_refs"):
-            return results
         if len(self.running_refs) == 0:
             return results
         if len(self.running_refs) > 1:
             self.running_refs = torch.cat(self.running_refs).to(device=self.rank)
             self.running_preds = torch.cat(self.running_preds).to(device=self.rank)
+        else:
+            self.running_refs = self.running_refs[0]
+            self.running_preds = self.running_preds[0]
             
         if self.has_str_values:
             refs_decoded = self.tokenizer.decode(self.running_refs)
@@ -119,23 +117,22 @@ class Evaluate:
         if self.running_res is not None:
             for key, value in results.items():
                 self.running_res[key].append(value)
-                results[key] = sum(self.running_res[key]) / len(self.running_res[key])
-        self.results = results
+                
         self.reset_tensor()
-        return results
+        return { m: sum(v) / len(v) for m, v in self.running_res }
     
     def __call__(self, refs, preds, tokenized = True):
         self.update(refs, preds, tokenized=tokenized)
         return self.compute()
     
     def reset_tensor(self):
-        self.running_preds, self.running_refs = None, None
         del self.running_preds, self.running_refs
         torch.cuda.empty_cache()
+        self.running_preds, self.running_refs = [], []
+        self.running_numel = 0
 
     def reset(self):
         self.reset_tensor()
-        self.results = {}
         self.running_res = { key: [] for key in self.result_keys }
 
     def _get_results_format(self):
