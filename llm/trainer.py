@@ -90,8 +90,8 @@ class Trainer:
         self.eval_val = kwargs.get("eval_val", None)
 
         self.history = {
-            "train_loss": [], 
-            "val_loss": [], 
+            "loss_train": [], 
+            "loss_val": [], 
             "confidence_train": [], 
             "confidence_val": [],
             "accuracy_train": [], 
@@ -195,13 +195,13 @@ class Trainer:
                             val_metrics=eval_val
                         )
 
-                self.history["train_loss"].append(train_loss)
-                self.history["val_loss"].append(val_loss)
+                self.history["loss_train"].append(train_loss)
+                self.history["loss_val"].append(val_loss)
 
                 if self.rank == 0 or get_device().type == "mps":
                     tepoch.set_postfix(
-                        loss = self.history["train_loss"][-1],
-                        loss_val = self.history["val_loss"][-1],
+                        loss = self.history["loss_train"][-1],
+                        loss_val = self.history["loss_val"][-1],
                         accuracy_train = self.history["accuracy_train"][-1],
                         accuracy_val = self.history["accuracy_val"][-1],
                         confidence_train = self.history["confidence_train"][-1],
@@ -668,13 +668,14 @@ class Trainer:
         # self.save_grads()
     
     def load_model(self, best: bool = False):
-        path = "model.pth" if not best else "best.pth"
+        path = "model.pth" if not best else "best_model.pth"
         path = self.model_dir.joinpath(path)
+        print("Try to load model from:", path)
         try:
-            checkpoint = torch.load(self.path, weights_only=False)
+            checkpoint = torch.load(path, weights_only=False)
         except:
             print(f"Load model on GPU failed, trying to load on CPU")
-            checkpoint = torch.load(self.path, weights_only=False, map_location=torch.device('cpu'))
+            checkpoint = torch.load(path, weights_only=False, map_location=torch.device('cpu'))
         self.model.load_state_dict(checkpoint['model_state_dict'])
         # self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         # self.loss_fn.load_state_dict(checkpoint['loss'])
@@ -682,7 +683,7 @@ class Trainer:
         return self.model
     
     def save_modelcheckpoint(self, best: bool = False):
-        path = "model.pth" if not best else "best.pth"
+        path = "model.pth" if not best else "best_model.pth"
         path = self.model_dir.joinpath(path)
         print(f"Try to save model checkpoint at {path}")
         save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
