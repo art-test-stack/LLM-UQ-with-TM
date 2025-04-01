@@ -9,7 +9,7 @@ helpFunction() {
 }
 
 # Default values
-mode="batch"
+train_mode="batch"
 
 while getopts "m:t:" opt; do
    case "$opt" in

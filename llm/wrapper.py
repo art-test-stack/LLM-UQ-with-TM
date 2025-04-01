@@ -16,7 +16,7 @@ def fsdp_wrapper(
     if not torch.cuda.is_available():
         return model
     print("Load FSDP wrapper...")
-    device_id = torch.cuda.current_device()
+    device_id = device_id or torch.cuda.current_device()
     transformer_auto_wrapper_policy = functools.partial(
         transformer_auto_wrap_policy,
         transformer_layer_cls={
@@ -28,6 +28,7 @@ def fsdp_wrapper(
         sharding_strategy=sharding_strategy,
         auto_wrap_policy=transformer_auto_wrapper_policy,
         device_id=device_id,
+        limit_all_gathers=True
     )
     print("FSDP model", model)
     print("FSDP wrapper loaded!")
