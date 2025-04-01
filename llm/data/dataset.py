@@ -86,6 +86,7 @@ class FinQADataset(Dataset):
         # PREPARE ANSWER
         if self.short_answer:
             _answer = data["final_result"] if data["answer"] == "" else min(data["answer"], data["final_result"], key=len)
+            _answer = _answer if _answer else data["answer"] 
         else:
             _answer = data["gold_inds"]
             while type(_answer) == list:

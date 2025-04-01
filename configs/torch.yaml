@@ -12,7 +12,7 @@ model:
     dim_ffn: 1024
     nhead: 8
     dropout: 0.3
-    max_seq_len: 1024
+    max_seq_len: 768
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
 
@@ -35,7 +35,7 @@ data:
   short_answer: True
   easy_task: True
   hint: True
-  max_a_length: 8
+  max_a_length: 16
 
 lctm:
   uq_path: "CSV_PATH"
