@@ -10,7 +10,16 @@ def split(text: str) -> list[str]:
         return []
 
     safe_control_tokens = [regex.escape(c) for c in CONTROL_TOKENS_LIST]
-    reg = r'(' + r'|'.join(safe_control_tokens) + r'|\d+|\s+|\p{L}+|[^\d\p{L}\s' + r''.join([f'[{i}]' for i in safe_control_tokens]) + r']+)'
+    # reg = r'(' + r'|'.join(safe_control_tokens) + r'|\d+|\s+|\p{L}+|[^\d\p{L}\s' + r''.join([f'[{i}]' for i in safe_control_tokens]) + r']+)'
+    reg = (
+        r'(' + 
+        r'|'.join(safe_control_tokens) +  # Match control tokens first
+        # r'|\d+(?:\.\d+)?' +  # Match numbers, including decimals
+        r'|\d' +  # Match individual digits separately
+        r'|\s+' +  # Match spaces
+        r'|\p{L}+' +  # Match words (letters)
+        r'|[^\d\p{L}\s' + ''.join([f'[{i}]' for i in safe_control_tokens]) + r']+)'  # Match any remaining special characters
+    )
     words = regex.split(reg, text, flags = regex.UNICODE, concurrent = False)
     words = list(filter(None, words))
 
