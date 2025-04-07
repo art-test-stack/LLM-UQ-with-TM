@@ -61,6 +61,15 @@ class Evaluate:
         self._accuracy = Accuracy(padding_id=self.padding_id, rank=self.rank)
         self.metrics["accuracy"] = SampleType.TENSOR
 
+        self._recall = Recall(padding_id=self.padding_id, rank=self.rank)
+        self.metrics["recall"] = SampleType.TENSOR
+
+        self._precision = Precision(padding_id=self.padding_id, rank=self.rank)
+        self.metrics["precision"] = SampleType.TENSOR
+
+        self._f1 = F1(padding_id=self.padding_id, rank=self.rank)
+        self.metrics["f1"] = SampleType.TENSOR
+
         self._confidence = ConfidenceScore(padding_id=self.padding_id, rank=self.rank)
         self.metrics["confidence"] = SampleType.TENSOR
 
@@ -206,6 +215,144 @@ class Accuracy:
         acc = (predictions == references).to(dtype = torch.float32).mean()
 
         return acc.item()
+
+class Recall:
+    """
+    Compute recall
+    
+    Args:
+        padding_id: int
+            The padding id to ignore while computing recall
+
+    """
+    def __init__(self, padding_id: int = 0, rank: int = 0):
+        self.padding_id = padding_id 
+        self.rank = rank
+    
+    @torch.inference_mode()
+    def compute(
+            self,
+            references: torch.Tensor,
+            predictions: torch.Tensor,
+        ) -> torch.Tensor:
+        """
+        Compute recall
+        Args:
+            references (torch.Tensor):
+                The reference tensor. Shape: (batch_size, seq_len)
+            predictions (torch.Tensor):
+                The prediction tensor. Shape: (batch_size, seq_len)
+        Returns:
+            float: Recall in the range [0, 1]
+        """
+        references = references.to(device=self.rank)
+        predictions = predictions.to(device=self.rank)
+        padding_id = self.padding_id
+        references = references.view(-1)
+        predictions = predictions.argmax(dim=-1).view(-1)
+        mask = references != padding_id
+        references = references[mask]
+        predictions = predictions[mask]
+        tp = (predictions == references).to(dtype = torch.float32).sum()
+        fn = (predictions != references).to(dtype = torch.float32).sum()
+        recall = tp / (tp + fn) if tp + fn > 0 else torch.tensor(0.)
+        return recall.item()
+    
+class Precision:
+    """
+    Compute precision
+    
+    Args:
+        padding_id: int
+            The padding id to ignore while computing precision
+
+    """
+    def __init__(self, padding_id: int = 0, rank: int = 0):
+        self.padding_id = padding_id 
+        self.rank = rank
+    
+    @torch.inference_mode()
+    def compute(
+            self,
+            references: torch.Tensor,
+            predictions: torch.Tensor,
+        ) -> torch.Tensor:
+        """
+        Compute precision
+        Args:
+            references (torch.Tensor):
+                The reference tensor. Shape: (batch_size, seq_len)
+            predictions (torch.Tensor):
+                The prediction tensor. Shape: (batch_size, seq_len)
+        Returns:
+            float: Precision in the range [0, 1]
+        """
+        references = references.to(device=self.rank)
+        predictions = predictions.to(device=self.rank)
+        padding_id = self.padding_id
+        references = references.view(-1)
+        predictions = predictions.argmax(dim=-1).view(-1)
+        mask = references != padding_id
+        references = references[mask]
+        predictions = predictions[mask]
+        tp = (predictions == references).to(dtype = torch.float32).sum()
+        fp = (predictions != references).to(dtype = torch.float32).sum()
+        precision = tp / (tp + fp) if tp + fp > 0 else torch.tensor(0.)
+        return precision.item()
+
+class F1:
+    """
+    Compute F1 score
+    
+    Args:
+        padding_id: int
+            The padding id to ignore while computing F1 score
+
+    """
+    def __init__(self, padding_id: int = 0, rank: int = 0):
+        self.padding_id = padding_id 
+        self.rank = rank
+        self.precision = Precision(padding_id=padding_id, rank=rank)
+        self.recall = Recall(padding_id=padding_id, rank=rank)
+    
+    @torch.inference_mode()
+    def compute(
+            self,
+            references: torch.Tensor,
+            predictions: torch.Tensor,
+        ) -> torch.Tensor:
+        """
+        Compute F1 score
+        Args:
+            references (torch.Tensor):
+                The reference tensor. Shape: (batch_size, seq_len)
+            predictions (torch.Tensor):
+                The prediction tensor. Shape: (batch_size, seq_len)
+        Returns:
+            float: F1 score in the range [0, 1]
+        """
+        references = references.to(device=self.rank)
+        predictions = predictions.to(device=self.rank)
+
+        precision = self.precision.compute(references=references, predictions=predictions)
+        recall = self.recall.compute(references=references, predictions=predictions)
+        # padding_id = self.padding_id
+        # references = references.view(-1)
+        # predictions = predictions.argmax(dim=-1).view(-1)
+        # mask = references != padding_id
+        # references = references[mask]
+        # predictions = predictions[mask]
+        
+        # tp = (predictions == references).to(dtype = torch.float32).sum()
+        # fp = (predictions != references).to(dtype = torch.float32).sum()
+        # fn = (predictions != references).to(dtype = torch.float32).sum()
+
+        # precision = tp / (tp + fp) if tp + fp > 0 else torch.tensor(0.)
+        # recall = tp / (tp + fn) if tp + fn > 0 else torch.tensor(0.)
+
+        f1_score = 2 * ((precision * recall) / (precision + recall)) if precision + recall > 0 else 0.
+        return f1_score
+        # return f1_score.item()
     
 
 class ConfidenceScore:

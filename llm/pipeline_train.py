@@ -9,8 +9,6 @@ from tm_data.preprocessing import InputCSV
 from utils import get_device, get_cuda_allocation
 
 import os
-import pandas as pd
-import datasets
 
 import torch
 from torch import optim, nn
@@ -20,20 +18,12 @@ import torch.distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.utils.data import Sampler
 from torch.utils.data.distributed import DistributedSampler
-from torch.distributed.fsdp.wrap import (
-    size_based_auto_wrap_policy,
-    enable_wrap,
-    wrap,
-)
-from llama_models.llama3.reference_impl.generation import Llama
-import argparse
-import functools
+
 import yaml
 
 from random import randint
 
-def setup(rank, world_size, master_port: str = f'{randint(10_000,40_000)}'):
-# def setup(rank, world_size, master_port: str = f'{12355 + 10}'):
+def setup(rank, world_size, master_port: str = '12355'):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = master_port
     print("MASTER_PORT=",master_port)

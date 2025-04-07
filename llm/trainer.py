@@ -357,7 +357,7 @@ class Trainer:
                 loss = self.loss_fn(output.reshape(-1, vocab_size), labels[:,idx].reshape(-1))
                 loss = loss
                 logits[:, idx] = output
-                loss.backward()  # Backpropagate at each step
+                loss.backward()
                 
                 ddp_loss[0] += loss.item() 
                 del loss
@@ -701,7 +701,7 @@ class Trainer:
             }, path)
         print("Model checkpoint saved!")
 
-
+    @DeprecationWarning
     def infer(self, seq, tokenizer=None, testing=False):
         self.model.eval() 
         device = seq.device
