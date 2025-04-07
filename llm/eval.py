@@ -6,6 +6,8 @@ from typing import Callable, List
 from enum import Enum
 from typing import Dict, Union
 
+from sklearn.metrics import recall_score, precision_score, f1_score
+
 possible_metrics = [
     # "bleu",
     # "rouge",
@@ -253,10 +255,11 @@ class Recall:
         mask = references != padding_id
         references = references[mask]
         predictions = predictions[mask]
-        tp = (predictions == references).to(dtype = torch.float32).sum()
-        fn = (predictions != references).to(dtype = torch.float32).sum()
-        recall = tp / (tp + fn) if tp + fn > 0 else torch.tensor(0.)
-        return recall.item()
+        recall = recall_score(references.cpu().numpy(), predictions.cpu().numpy(), average='macro')
+        # tp = (predictions == references).to(dtype = torch.float32).sum()
+        # fn = (predictions != references).to(dtype = torch.float32).sum()
+        # recall = tp / (tp + fn) if tp + fn > 0 else torch.tensor(0.)
+        return recall
     
 class Precision:
     """
@@ -295,10 +298,12 @@ class Precision:
         mask = references != padding_id
         references = references[mask]
         predictions = predictions[mask]
-        tp = (predictions == references).to(dtype = torch.float32).sum()
-        fp = (predictions != references).to(dtype = torch.float32).sum()
-        precision = tp / (tp + fp) if tp + fp > 0 else torch.tensor(0.)
-        return precision.item()
+        # tp = (predictions == references).to(dtype = torch.float32).sum()
+        # fp = (predictions != references).to(dtype = torch.float32).sum()
+        # precision = tp / (tp + fp) if tp + fp > 0 else torch.tensor(0.)
+
+        precision = precision_score(references.cpu().numpy(), predictions.cpu().numpy(), average='macro')
+        return precision
 
 class F1:
     """
@@ -333,9 +338,15 @@ class F1:
         """
         references = references.to(device=self.rank)
         predictions = predictions.to(device=self.rank)
+        padding_id = self.padding_id
+        references = references.view(-1)
+        predictions = predictions.argmax(dim=-1).view(-1)
+        mask = references != padding_id
+        references = references[mask]
+        predictions = predictions[mask]
 
-        precision = self.precision.compute(references=references, predictions=predictions)
-        recall = self.recall.compute(references=references, predictions=predictions)
+        # precision = self.precision.compute(references=references, predictions=predictions)
+        # recall = self.recall.compute(references=references, predictions=predictions)
         # padding_id = self.padding_id
         # references = references.view(-1)
         # predictions = predictions.argmax(dim=-1).view(-1)
@@ -349,9 +360,9 @@ class F1:
 
         # precision = tp / (tp + fp) if tp + fp > 0 else torch.tensor(0.)
         # recall = tp / (tp + fn) if tp + fn > 0 else torch.tensor(0.)
-
-        f1_score = 2 * ((precision * recall) / (precision + recall)) if precision + recall > 0 else 0.
-        return f1_score
+        f1 = f1_score(references.cpu().numpy(), predictions.cpu().numpy(), average='macro')
+        # f1_score = 2 * ((precision * recall) / (precision + recall)) if precision + recall > 0 else 0.
+        return f1
         # return f1_score.item()
     
 
