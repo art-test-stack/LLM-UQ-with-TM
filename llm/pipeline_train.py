@@ -147,9 +147,10 @@ def train_llm_pipeline(rank, world_size, args):
 
     # Initialize optimizer
     lr = float(training_params["learning_rate"]) / training_params["batch_size"]
+    weight_decay = float(training_params["weight_decay"])
     optim_params = {
         "lr": lr,
-        "weight_decay": training_params["weight_decay"],
+        "weight_decay": weight_decay,
         "betas": training_params["betas"],
     }
     if training_params["optimizer"] == "adam":
