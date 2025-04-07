@@ -4,7 +4,7 @@ import torch
 from typing import Callable, List
 
 from enum import Enum
-from typing import Dict, Union
+from typing import Dict, Union, Tuple
 
 from sklearn.metrics import recall_score, precision_score, f1_score
 
@@ -27,13 +27,16 @@ class Evaluate:
     def __init__(
             self, 
             padding_id: int = None,
+            endtext_id: int = None,
             tokenizer: Callable = None, 
             metrics: List[str] = possible_metrics, 
             rank: int = 0
         ):
         assert tokenizer or isinstance(padding_id, int), "Tokenizer or padding_id is required"
+        assert tokenizer or isinstance(endtext_id, int), "Tokenizer or endtext_id is required"
         self.tokenizer = tokenizer
         self.padding_id = padding_id if not tokenizer else tokenizer.pad_token_id
+        self.endtext_id = endtext_id if not tokenizer else tokenizer.eos_token_id
         self.best = None
         self.best_metric = None
         self.rank = rank
@@ -60,22 +63,22 @@ class Evaluate:
         self.has_str_values = SampleType.STRING in list(self.metrics.values())
 
     def _init_custom_metrics(self):
-        self._accuracy = Accuracy(padding_id=self.padding_id, rank=self.rank)
+        self._accuracy = Accuracy(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
         self.metrics["accuracy"] = SampleType.TENSOR
 
-        self._recall = Recall(padding_id=self.padding_id, rank=self.rank)
+        self._recall = Recall(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
         self.metrics["recall"] = SampleType.TENSOR
 
-        self._precision = Precision(padding_id=self.padding_id, rank=self.rank)
+        self._precision = Precision(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
         self.metrics["precision"] = SampleType.TENSOR
 
-        self._f1 = F1(padding_id=self.padding_id, rank=self.rank)
+        self._f1 = F1(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
         self.metrics["f1"] = SampleType.TENSOR
 
-        self._confidence = ConfidenceScore(padding_id=self.padding_id, rank=self.rank)
+        self._confidence = ConfidenceScore(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
         self.metrics["confidence"] = SampleType.TENSOR
 
-        self._perplexity = Perplexity(padding_id=self.padding_id, rank=self.rank)
+        self._perplexity = Perplexity(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
         self.metrics["perplexity"] = SampleType.TENSOR
     
     @torch.inference_mode()
@@ -174,7 +177,57 @@ class Evaluate:
         self.reset()
 
 
-class Accuracy:
+class BaseMetric:
+    def __init__(self, padding_id: int = 0, endtext_id: int =0, rank: int = 0):
+        self.padding_id = padding_id 
+        self.endtext_id = endtext_id
+        self.rank = rank
+    
+    @torch.inference_mode()
+    def compute(self, references: torch.Tensor, predictions: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError("This method should be overridden by subclasses.")
+    
+    def get_mask(self, references: torch.Tensor) -> torch.Tensor:
+        """
+        Create a mask for the references tensor.
+        
+        Args:
+            references (torch.Tensor): The reference tensor.
+        
+        Returns:
+            torch.Tensor: The mask tensor.
+        """
+        references = references.to(device=self.rank)
+        padding_id = self.padding_id
+        endtext_id = self.endtext_id
+
+        mask = (references != padding_id) & (references != endtext_id)
+        return mask
+    
+    def apply_mask(self, references: torch.Tensor, predictions: torch.Tensor) -> Tuple[torch.Tensor,torch.Tensor]:
+        """
+        Apply the mask to the references and predictions tensors.
+        
+        Args:
+            references (torch.Tensor): The reference tensor.
+            predictions (torch.Tensor): The prediction tensor.
+        
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: The masked references and predictions tensors.
+        """
+        references = references.to(device=self.rank)
+        predictions = predictions.to(device=self.rank)
+
+        references = references.view(-1)
+        predictions = predictions.argmax(dim=-1).view(-1)
+
+        mask = self.get_mask(references)
+        references = references[mask]
+        predictions = predictions[mask]
+
+        return references, predictions
+    
+class Accuracy(BaseMetric):
     """
     Compute accuracy
     
@@ -183,9 +236,8 @@ class Accuracy:
             The padding id to ignore while computing accuracy
 
     """
-    def __init__(self, padding_id: int = 0, rank: int = 0):
-        self.padding_id = padding_id 
-        self.rank = rank
+    def __init__(self, padding_id = 0, endtext_id = 0, rank = 0):
+        super().__init__(padding_id, endtext_id, rank)
     
     @torch.inference_mode()
     def compute(
@@ -206,19 +258,12 @@ class Accuracy:
         """
         references = references.to(device=self.rank)
         predictions = predictions.to(device=self.rank)
-        padding_id = self.padding_id
-
-        references = references.view(-1)
-        predictions = predictions.argmax(dim=-1).view(-1)
-
-        mask = references != padding_id
-        references = references[mask]
-        predictions = predictions[mask]
+        references, predictions = self.apply_mask(references, predictions)
         acc = (predictions == references).to(dtype = torch.float32).mean()
 
         return acc.item()
 
-class Recall:
+class Recall(BaseMetric):
     """
     Compute recall
     
@@ -227,9 +272,8 @@ class Recall:
             The padding id to ignore while computing recall
 
     """
-    def __init__(self, padding_id: int = 0, rank: int = 0):
-        self.padding_id = padding_id 
-        self.rank = rank
+    def __init__(self, padding_id = 0, endtext_id = 0, rank = 0):
+        super().__init__(padding_id, endtext_id, rank)
     
     @torch.inference_mode()
     def compute(
@@ -249,19 +293,16 @@ class Recall:
         """
         references = references.to(device=self.rank)
         predictions = predictions.to(device=self.rank)
-        padding_id = self.padding_id
-        references = references.view(-1)
-        predictions = predictions.argmax(dim=-1).view(-1)
-        mask = references != padding_id
-        references = references[mask]
-        predictions = predictions[mask]
+
+        references, predictions = self.apply_mask(references, predictions)
+
         recall = recall_score(references.cpu().numpy(), predictions.cpu().numpy(), average='macro')
         # tp = (predictions == references).to(dtype = torch.float32).sum()
         # fn = (predictions != references).to(dtype = torch.float32).sum()
         # recall = tp / (tp + fn) if tp + fn > 0 else torch.tensor(0.)
         return recall
     
-class Precision:
+class Precision(BaseMetric):
     """
     Compute precision
     
@@ -270,9 +311,8 @@ class Precision:
             The padding id to ignore while computing precision
 
     """
-    def __init__(self, padding_id: int = 0, rank: int = 0):
-        self.padding_id = padding_id 
-        self.rank = rank
+    def __init__(self, padding_id = 0, endtext_id = 0, rank = 0):
+        super().__init__(padding_id, endtext_id, rank)
     
     @torch.inference_mode()
     def compute(
@@ -292,12 +332,8 @@ class Precision:
         """
         references = references.to(device=self.rank)
         predictions = predictions.to(device=self.rank)
-        padding_id = self.padding_id
-        references = references.view(-1)
-        predictions = predictions.argmax(dim=-1).view(-1)
-        mask = references != padding_id
-        references = references[mask]
-        predictions = predictions[mask]
+
+        references, predictions = self.apply_mask(references, predictions)
         # tp = (predictions == references).to(dtype = torch.float32).sum()
         # fp = (predictions != references).to(dtype = torch.float32).sum()
         # precision = tp / (tp + fp) if tp + fp > 0 else torch.tensor(0.)
@@ -305,7 +341,7 @@ class Precision:
         precision = precision_score(references.cpu().numpy(), predictions.cpu().numpy(), average='macro')
         return precision
 
-class F1:
+class F1(BaseMetric):
     """
     Compute F1 score
     
@@ -314,11 +350,8 @@ class F1:
             The padding id to ignore while computing F1 score
 
     """
-    def __init__(self, padding_id: int = 0, rank: int = 0):
-        self.padding_id = padding_id 
-        self.rank = rank
-        self.precision = Precision(padding_id=padding_id, rank=rank)
-        self.recall = Recall(padding_id=padding_id, rank=rank)
+    def __init__(self, padding_id = 0, endtext_id = 0, rank = 0):
+        super().__init__(padding_id, endtext_id, rank)
     
     @torch.inference_mode()
     def compute(
@@ -338,12 +371,8 @@ class F1:
         """
         references = references.to(device=self.rank)
         predictions = predictions.to(device=self.rank)
-        padding_id = self.padding_id
-        references = references.view(-1)
-        predictions = predictions.argmax(dim=-1).view(-1)
-        mask = references != padding_id
-        references = references[mask]
-        predictions = predictions[mask]
+        
+        references, predictions = self.apply_mask(references, predictions)
 
         # precision = self.precision.compute(references=references, predictions=predictions)
         # recall = self.recall.compute(references=references, predictions=predictions)
@@ -366,10 +395,9 @@ class F1:
         # return f1_score.item()
     
 
-class ConfidenceScore:
-    def __init__(self, padding_id: int = 0, rank: int = 0):
-        self.padding_id = padding_id 
-        self.rank = rank
+class ConfidenceScore(BaseMetric):
+    def __init__(self, padding_id = 0, endtext_id = 0, rank = 0):
+        super().__init__(padding_id, endtext_id, rank)
 
     @torch.inference_mode()
     def compute(
@@ -392,18 +420,18 @@ class ConfidenceScore:
 
         target_probs = probs.gather(dim=-1, index=references.unsqueeze(-1)).squeeze(-1)
 
-        valid_mask = references != self.padding_id
 
-        target_probs = target_probs[valid_mask]
+        mask = self.get_mask(references)
+
+        target_probs = target_probs[~mask]
 
         confidence = target_probs.mean()
         return confidence.item()
     
 
-class Perplexity:
-    def __init__(self, padding_id: int = 0, rank: int = 0):
-        self.padding_id = padding_id 
-        self.rank = rank
+class Perplexity(BaseMetric):
+    def __init__(self, padding_id = 0, endtext_id = 0, rank = 0):
+        super().__init__(padding_id, endtext_id, rank)
 
     @torch.inference_mode()
     def compute(
@@ -425,8 +453,9 @@ class Perplexity:
         log_probs = torch.nn.functional.log_softmax(predictions, dim=-1)
 
         target_log_probs = log_probs.gather(dim=-1, index=references.unsqueeze(-1)).squeeze(-1)
-        mask = references == self.padding_id
-        target_log_probs[mask] = 0
+        # mask = references == self.padding_id
+        mask = self.get_mask(references)
+        target_log_probs[~mask] = 0
         
         perplexity = torch.exp(-target_log_probs.mean(dim=-1))  
         return perplexity.mean().item()
