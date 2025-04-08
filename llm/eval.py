@@ -6,6 +6,7 @@ from typing import Callable, List
 from enum import Enum
 from typing import Dict, Union, Tuple
 
+import numpy as np
 from sklearn.metrics import recall_score, precision_score, f1_score
 
 possible_metrics = [
@@ -270,7 +271,10 @@ class Recall(BaseMetric):
     Args:
         padding_id: int
             The padding id to ignore while computing recall
-
+        endtext_id: int
+            The end-of-text token id to ignore while computing recall
+        rank: int
+            The rank of the current process in distributed training
     """
     def __init__(self, padding_id = 0, endtext_id = 0, rank = 0):
         super().__init__(padding_id, endtext_id, rank)
@@ -296,10 +300,11 @@ class Recall(BaseMetric):
 
         references, predictions = self.apply_mask(references, predictions)
 
-        recall = recall_score(references.cpu().numpy(), predictions.cpu().numpy(), average='macro')
-        # tp = (predictions == references).to(dtype = torch.float32).sum()
-        # fn = (predictions != references).to(dtype = torch.float32).sum()
-        # recall = tp / (tp + fn) if tp + fn > 0 else torch.tensor(0.)
+        references = references.cpu().numpy()
+        predictions = predictions.cpu().numpy()
+        
+        labels = np.unique(predictions)
+        recall = recall_score(y_true=references, y_pred=predictions, average='macro', labels=labels, zero_division=0)
         return recall
     
 class Precision(BaseMetric):
@@ -338,7 +343,10 @@ class Precision(BaseMetric):
         # fp = (predictions != references).to(dtype = torch.float32).sum()
         # precision = tp / (tp + fp) if tp + fp > 0 else torch.tensor(0.)
 
-        precision = precision_score(references.cpu().numpy(), predictions.cpu().numpy(), average='macro')
+        references = references.cpu().numpy()
+        predictions = predictions.cpu().numpy()
+        labels = np.unique(predictions)
+        precision = precision_score(y_true=references, y_pred=predictions, average='macro', labels=labels)
         return precision
 
 class F1(BaseMetric):
@@ -389,12 +397,15 @@ class F1(BaseMetric):
 
         # precision = tp / (tp + fp) if tp + fp > 0 else torch.tensor(0.)
         # recall = tp / (tp + fn) if tp + fn > 0 else torch.tensor(0.)
-        f1 = f1_score(references.cpu().numpy(), predictions.cpu().numpy(), average='macro')
+
+        references = references.cpu().numpy()
+        predictions = predictions.cpu().numpy()
+        labels = np.unique(predictions) # list(set(references) | set(predictions))
+        f1 = f1_score(y_true=references, y_pred=predictions, average='macro', labels=labels)
         # f1_score = 2 * ((precision * recall) / (precision + recall)) if precision + recall > 0 else 0.
         return f1
         # return f1_score.item()
     
-
 class ConfidenceScore(BaseMetric):
     def __init__(self, padding_id = 0, endtext_id = 0, rank = 0):
         super().__init__(padding_id, endtext_id, rank)
@@ -409,21 +420,20 @@ class ConfidenceScore(BaseMetric):
         Calculate confidence score from logits and target labels, ignoring padding tokens.
 
         Args:
-        - logits (torch.Tensor): Logits output from the model (batch_size, seq_length, vocab_size).
-        - target (torch.Tensor): Ground truth labels (batch_size, seq_length).
-        - pad_token_id (int): ID of the padding token to ignore.
+        - references (torch.Tensor): Ground truth labels (batch_size, seq_length).
+        - predictions (torch.Tensor): Logits output from the model (batch_size, seq_length, vocab_size).
 
         Returns:
         - confidence (float): The confidence score.
         """
+        if predictions.dim() != 3:
+            raise ValueError("Predictions must be logits with shape (batch_size, seq_length, vocab_size).")
         probs = torch.nn.functional.softmax(predictions, dim=-1)
 
         target_probs = probs.gather(dim=-1, index=references.unsqueeze(-1)).squeeze(-1)
 
-
         mask = self.get_mask(references)
-
-        target_probs = target_probs[~mask]
+        target_probs = target_probs[mask]
 
         confidence = target_probs.mean()
         return confidence.item()
