@@ -1,4 +1,4 @@
-from pipeline_lctm import pipeline_lctm
+from lctm.pipeline_lctm import pipeline_lctm
 import argparse
 from dotenv import load_dotenv
 
@@ -12,5 +12,6 @@ if __name__=="__main__":
     parser.add_argument('--csv_path', type=str, default="", metavar='PF',
                         help='File containing the model training data')
     
+    load_dotenv()
     args = parser.parse_args()
     pipeline_lctm(args=args)
