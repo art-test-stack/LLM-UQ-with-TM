@@ -14,8 +14,8 @@ def split(text: str) -> list[str]:
     reg = (
         r'(' + 
         r'|'.join(safe_control_tokens) +  # Match control tokens first
-        # r'|\d+(?:\.\d+)?' +  # Match numbers, including decimals
-        r'|\d' +  # Match individual digits separately
+        r'|\d+(?:\.\d+)?' +  # Match numbers, including decimals
+        # r'|\d' +  # Match individual digits separately
         r'|\s+' +  # Match spaces
         r'|\p{L}+' +  # Match words (letters)
         r'|[^\d\p{L}\s' + ''.join([f'[{i}]' for i in safe_control_tokens]) + r']+)'  # Match any remaining special characters
