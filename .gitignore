@@ -13,6 +13,9 @@ glove/*
 notebooks/*
 !notebooks/README.md
 
+lctm/interpretability_clauses/*
+!lctm/interpretability_clauses/README.md
+
 pycuda_2025.1
 pycuda
 tmu

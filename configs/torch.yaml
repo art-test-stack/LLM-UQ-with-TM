@@ -1,5 +1,5 @@
 model:
-  name: "new-glove"
+  name: "torch2glove"
   type: "torch"
   tokenizer: "glove.6B.300d"
   config:
@@ -7,7 +7,7 @@ model:
     # model_size: 512
     # dim_ffn: 1024
     # nhead: 16
-    num_layers: 6
+    num_layers: 4
     model_size: 512
     dim_ffn: 1024
     nhead: 8
