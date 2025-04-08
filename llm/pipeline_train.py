@@ -57,7 +57,7 @@ def print_fsdp_wrapping(module, prefix=""):
         print_fsdp_wrapping(child, full_name)
 
 
-def train_llm_pipeline(rank, world_size, args):
+def train_llm_pipeline(rank, world_size, master_port, args):
     """
     Train a model using the FinQA dataset
     
@@ -70,7 +70,7 @@ def train_llm_pipeline(rank, world_size, args):
     # Initialize the process group
     print("rank", rank)
     if not args.no_cuda:
-        setup(rank, world_size)
+        setup(rank, world_size, master_port)
     else:
         rank = get_device()
     # Load parameters
@@ -84,7 +84,7 @@ def train_llm_pipeline(rank, world_size, args):
 
     # Load tokenizer and model
     model, tokenizer, TransformerBlock = model_handler(model_params)
-    model = model.to(rank)
+    # model = model.to(rank)
 
     # Load data
     # TODO: add to settings
