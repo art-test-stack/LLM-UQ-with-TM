@@ -4,7 +4,7 @@ from llm.wrapper import fsdp_wrapper
 from llm.trainer import Trainer
 from llm.eval import Evaluate
 
-from tm_data.preprocessing import InputCSV
+from tm_data.fetch_data import InputCSV
 
 from utils import get_device, get_cuda_allocation
 

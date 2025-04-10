@@ -1,4 +1,4 @@
-from tm_data.preprocessing import InputCSV
+from tm_data.fetch_data import InputCSV
 from llm.handlers.handler import ModelType
 from llm.utils import EarlyStopping
 from utils import get_cuda_allocation, get_device

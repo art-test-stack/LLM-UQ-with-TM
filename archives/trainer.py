@@ -1,4 +1,4 @@
-from tm_data.preprocessing import InputCSV 
+from tm_data.fetch_data import InputCSV 
 from llm.model import LLM
 from llm.utils import EarlyStopping
 

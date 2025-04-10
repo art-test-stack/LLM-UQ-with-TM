@@ -4,7 +4,7 @@ from llm.data.tokenizer import Tokenizer
 from llm.model import LLM
 from archives.trainer import Trainer
 
-from tm_data.preprocessing import InputCSV
+from tm_data.fetch_data import InputCSV
 
 from utils import get_device, get_cuda_allocation
 
