@@ -134,6 +134,10 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     # TODO: add DDP wrapper
     if world_size > 1: # For my local runs when I test the code
         model = fsdp_wrapper(model, TransformerBlock, device_id=rank)
+    elif torch.cuda.is_available():
+        model = model.to(rank)
+    else:
+        model = model.to(get_device())
 
     # Initialize optimizer
     lr = float(training_params["learning_rate"]) / training_params["batch_size"]
