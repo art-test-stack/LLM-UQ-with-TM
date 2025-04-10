@@ -39,11 +39,14 @@ if __name__=="__main__":
     # torch.cuda.set_per_process_memory_fraction(1., device=get_device())
     # torch.backends.cudnn.benchmark = True
     torch.cuda.empty_cache()
+    from random import randint
+
+    master_port = f'{randint(10_000,40_000)}'
     if WORLD_SIZE == 0:
         print("No GPU available")
     if WORLD_SIZE<=1:
         print("WORLD SIZE = ", WORLD_SIZE)
-        train_llm_pipeline(rank=0, world_size=1, args=args)
+        train_llm_pipeline(rank=0, world_size=1, master_port=master_port, args=args)
     else:
         print("WORLD SIZE = ", WORLD_SIZE)
         try:
@@ -51,7 +54,7 @@ if __name__=="__main__":
 
             torch.multiprocessing.set_start_method("fork", force=True)
             mp.spawn(train_llm_pipeline,
-                args=(WORLD_SIZE, args),
+                args=(WORLD_SIZE, master_port, args),
                 nprocs=WORLD_SIZE,
                 join=True
             )

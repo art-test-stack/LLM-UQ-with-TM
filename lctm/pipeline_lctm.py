@@ -60,8 +60,15 @@ def pipeline_lctm(args: Namespace):
                     all_labels  = []
                     
                     res_name = generate_res_name(runs, num_clauses, T, S)
+                    res = {
+                        'num_clauses': num_clauses,
+                        'T': T,
+                        'S': S,
+                        'interpretability_clauses': lctm.interpretability_clauses,
+                        'grouped_samples': lctm.grouped_samples
+                    }
                     with open(res_path.joinpath(res_name), 'wb') as f:
-                        pickle.dump(lctm.interpretability_clauses, f, protocol=pickle.HIGHEST_PROTOCOL)
+                        pickle.dump(res, f, protocol=pickle.HIGHEST_PROTOCOL)
                         print('Interpretability Clauses saved at:', res_path.joinpath(res_name))
 
                     print('Interpretability Clauses:', lctm.interpretability_clauses)

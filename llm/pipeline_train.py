@@ -47,7 +47,7 @@ def print_fsdp_wrapping(module, prefix=""):
         print_fsdp_wrapping(child, full_name)
 
 
-def train_llm_pipeline(rank, world_size, args):
+def train_llm_pipeline(rank, world_size, master_port, args):
     """
     Train a model using the FinQA dataset
     
@@ -60,7 +60,7 @@ def train_llm_pipeline(rank, world_size, args):
     # Initialize the process group
     print("rank", rank)
     if not args.no_cuda:
-        setup(rank, world_size)
+        setup(rank, world_size, master_port)
     else:
         rank = get_device()
     # Load parameters
@@ -74,7 +74,7 @@ def train_llm_pipeline(rank, world_size, args):
 
     # Load tokenizer and model
     model, tokenizer, TransformerBlock = model_handler(model_params)
-    model = model.to(rank)
+    # model = model.to(rank)
 
     # Load data
     # TODO: add to settings
@@ -134,6 +134,10 @@ def train_llm_pipeline(rank, world_size, args):
     # TODO: add DDP wrapper
     if world_size > 1: # For my local runs when I test the code
         model = fsdp_wrapper(model, TransformerBlock, device_id=rank)
+    elif torch.cuda.is_available():
+        model = model.to(rank)
+    else:
+        model = model.to(get_device())
 
     # Initialize optimizer
     lr = float(training_params["learning_rate"]) / training_params["batch_size"]

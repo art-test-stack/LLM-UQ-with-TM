@@ -23,6 +23,13 @@ def fsdp_wrapper(
             model_block_cls,
         },
     )
+    model = FSDP(
+        model,
+        sharding_strategy=sharding_strategy,
+        auto_wrap_policy=transformer_auto_wrapper_policy,
+        device_id=device_id,
+    )
+
     model.layers = FSDP(
         model.layers,
         sharding_strategy=sharding_strategy,
