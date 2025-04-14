@@ -16,6 +16,15 @@ import pickle
 import os
 from pathlib import Path
 
+def create_dir(path: Union[str, Path], k: int = 0):
+    lctm_name = "example" if k==0 else f"example_{k}"
+    res_path = Path(path) / lctm_name
+    if res_path.exists():
+        return create_dir(path, k + 1)
+    else:
+        res_path.mkdir(parents=True, exist_ok=True)
+        return res_path
+
 
 def pipeline_lctm(args: Namespace):
     csv_path = args.csv_path
@@ -31,11 +40,12 @@ def pipeline_lctm(args: Namespace):
     epsilon =0.8 # percentage of how likely to penalize a wrong labeled decided from an LA. leaving a window for exploration (1 - epsilon). If all LAs penalized at once for example, they will be in a loop due to the symetric nature of the issue.
 
     interpretability_cl_storage = os.getenv("TM_INTER_CL")
-    lctm_name = "example_lctm"
-    res_path = Path(interpretability_cl_storage) / lctm_name
-    if not res_path.exists():
-        res_path.mkdir(parents=True, exist_ok=True)
-    # res_path = str(res_path)
+    # lctm_name = "example"
+    # res_path = Path(interpretability_cl_storage) / lctm_name
+    # if res_path.exists():
+    #     res_path.mkdir(parents=True, exist_ok=True)
+    res_path = create_dir(interpretability_cl_storage)
+
     print("Result of interpretability clusters at:", str(res_path))
 
     generate_res_name = lambda run, num_clauses, T, S: f"run_{run}_clauses_{num_clauses}_T_{T}_S_{S}"
