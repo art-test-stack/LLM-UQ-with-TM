@@ -233,7 +233,7 @@ class Trainer:
 
 
     def _get_train_val_loops(self):
-        if self.model_type == "hgface":
+        if self.model_type == "hgface2":
             if self.training_type == TrainingType.BATCH:
                 return self._train_hgface_epoch, self._val_hgface_epoch
             else:

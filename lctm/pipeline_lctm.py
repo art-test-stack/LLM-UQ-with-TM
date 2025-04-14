@@ -45,7 +45,7 @@ def pipeline_lctm(args: Namespace):
 
     results = []
     sil_scores = []
-    runs = 10
+    runs = 1
     while runs != 0:
         for num_clauses in num_clauses_l:
             for T in T_l:
@@ -111,3 +111,16 @@ def pipeline_lctm(args: Namespace):
     print('Experiment Setup used [num_features, num_samples_per_subpattern] ---->', num_features, min_samples_per_sub_pattern)
 
             
+
+
+# Final Results--> (Grouped Samples):
+# Cluster Size:  44
+# Cluster Included Patterns Info:
+# ----------------------------------------
+# Cluster Size:  13
+# Cluster Included Patterns Info:
+# ----------------------------------------
+# Percentage of Successful Learning was ----> 0.0 mean +/- 2 * std / sqrt(10)
+# SIL Score:  ----> 0.288845648207222 67% SIL Score: +- 2 * 0.07 = [0.14, 0.43] , 95% +- 3 * 0.07 = [0.07, 0.5]
+# SIL ERROR:  ----> 0.06555037534759874
+# Experiment Setup used [num_features, num_samples_per_subpattern] ----> 220 700
