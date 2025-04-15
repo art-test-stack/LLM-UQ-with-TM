@@ -38,7 +38,8 @@ class InputCSV:
             val_metrics: List[str] = None
         ) -> None:
         if type(path) == str:
-            self.path = Path(path)
+            path = Path(path)
+        self.path = path
         if not self.path.suffix == '.csv':
             self.path = self.path.with_suffix('.csv')
         self.model = model
