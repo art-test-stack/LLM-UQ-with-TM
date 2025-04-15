@@ -278,11 +278,25 @@ class Trainer:
             
             del batch
             assert not torch.isnan(input_ids).any(), "NaN found in sources!"
-            with torch.autocast(device_type="cuda", dtype=torch.float32):
-                output = get_logits(input_ids, mask=mask)[:, start_pos:]
-                del mask
-                loss = self.loss_fn(output.reshape(-1, vocab_size), labels.reshape(-1))
-                loss = loss
+            # with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            #     print("input_ids.min()", input_ids.min())
+            #     print("input_ids.max()", input_ids.max())
+            #     print("input_ids.shape", input_ids.shape)
+            #     print("mask.shape", mask.shape)
+            #     print("base_model.model.model.embed_tokens.weight.shape", self.model.model.model.embed_tokens.weight.shape)
+            #     output = get_logits(input_ids, mask=mask)[:, start_pos:]
+            #     del mask
+            #     loss = self.loss_fn(output.reshape(-1, vocab_size), labels.reshape(-1))
+            #     loss = loss
+            # print("input_ids.min()", input_ids.min())
+            # print("input_ids.max()", input_ids.max())
+            # print("input_ids.shape", input_ids.shape)
+            # print("mask.shape", mask.shape)
+            # print("base_model.model.model.embed_tokens.weight.shape", self.model.model.model.embed_tokens.weight.shape)
+            output = get_logits(input_ids, mask=mask)[:, start_pos:]
+            del mask
+            loss = self.loss_fn(output.reshape(-1, vocab_size), labels.reshape(-1))
+            loss = loss
                 
             loss.backward()
 
@@ -328,11 +342,16 @@ class Trainer:
                 assert not torch.isnan(input_ids).any(), "NaN found in sources!"
                 vocab_size = self.model.vocab_size
 
-                with torch.autocast(device_type=f"cuda", dtype=torch.float32):
-                    output = get_logits(input_ids, mask=mask)[:,start_pos:]
-                    logits = output.reshape(-1, vocab_size)
+                # with torch.autocast(device_type=f"cuda", dtype=torch.bfloat16):
+                #     output = get_logits(input_ids, mask=mask)[:,start_pos:]
+                #     logits = output.reshape(-1, vocab_size)
 
-                    loss = self.loss_fn(logits, labels.reshape(-1))
+                #     loss = self.loss_fn(logits, labels.reshape(-1))
+                
+                output = get_logits(input_ids, mask=mask)[:,start_pos:]
+                logits = output.reshape(-1, vocab_size)
+
+                loss = self.loss_fn(logits, labels.reshape(-1))
                 
                 if self.eval_val:
                     self.eval_val.update(refs=labels, preds=output)

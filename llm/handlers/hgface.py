@@ -22,12 +22,14 @@ class TokenizerHGFLlama:
         # self.pad_token_id = self.model.vocab[self.model.eos_token]
 
         self.pad_token_id = self.model.vocab["<|reserved_special_token_0|>"]
+        print("Pad token id:", self.pad_token_id)
         # self.pad_token_id = self.model.vocab["<0x00>"]
         
         self.bos_token_id = self.model.vocab[self.model.bos_token]
         self.eos_token_id = self.model.vocab[self.model.eos_token]
 
         self.vocab = dict(sorted(tokenizer.vocab.items(), key=lambda item: item[1]))
+        self.max_token_id = max(self.vocab.values())
 
     def __call__(
         self, 
@@ -46,7 +48,7 @@ class TokenizerHGFLlama:
         )
     
     def __len__(self):
-        return self.model.vocab_size
+        return max(self.vocab.values())
     
     def encode(
             self, 
@@ -95,7 +97,7 @@ class TokenizerHGFLlama:
         return self.model.decode([tk for tk in token_ids if tk != self.pad_token_id]) 
     
     def get_vocab_size(self):
-        return self.model.vocab_size
+        return max(self.vocab.values())
     
     
 
@@ -124,7 +126,7 @@ def hgface_handler(params):
     
     print(tokenizer.vocab)
     model.base_model.padding_id = tokenizer.pad_token_id
-    model.resize_token_embeddings(tokenizer.get_vocab_size())
+    model.resize_token_embeddings(tokenizer.max_token_id)
     
     lora_config = LoraConfig(
         **lora_config

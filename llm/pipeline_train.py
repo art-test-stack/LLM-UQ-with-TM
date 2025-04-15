@@ -194,7 +194,13 @@ def train_llm_pipeline(rank, world_size, master_port, args):
         train_metrics=eval_train.result_keys,
         val_metrics=eval_val.result_keys,
     )
+    if torch.cuda.is_available():
+        model = model.to(dtype=torch.bfloat16)
 
+    for pname, mparam in model.named_parameters():
+        print("Name:", pname)
+        print(mparam.dtype)
+        print(mparam.device)
     # Initialize trainer
     trainer = Trainer(
         model,
