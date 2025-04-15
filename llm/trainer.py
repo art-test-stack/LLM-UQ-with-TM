@@ -10,6 +10,8 @@ from torch.utils.data import DataLoader
 import torch.distributed as dist
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp import FullStateDictConfig, StateDictType
+
+from transformers import DynamicCache
 from typing import Callable, Dict, Union
 from tqdm import tqdm
 from pathlib import Path
@@ -261,9 +263,11 @@ class Trainer:
             
             del batch
             assert not torch.isnan(input_ids).any(), "NaN found in sources!"
-
+            past_key_values = DynamicCache()
+            cache_position = torch.arange(0, input_ids.size(1) - 1, device=self.rank) #.unsqueeze(0).expand(input_ids.size(0), -1)
             with torch.autocast(device_type="cuda", dtype=torch.float32):
-                output = self.model(input_ids, mask=mask)[:, start_pos:]
+                output = self.model(input_ids, mask=mask, past_key_values=past_key_values, do_sample=False, cache_position=cache_position)
+                output = output[:, start_pos:]
                 del mask
                 loss = self.loss_fn(output.reshape(-1, vocab_size), labels.reshape(-1))
                 loss = loss
@@ -516,6 +520,7 @@ class Trainer:
         train_loss = ddp_loss[0] / ddp_loss[1]
 
         return float(train_loss.cpu().numpy())
+
 
     @PendingDeprecationWarning
     def _val_hgface_epoch(self, val_loader: DataLoader) -> float:

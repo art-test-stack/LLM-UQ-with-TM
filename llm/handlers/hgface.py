@@ -12,14 +12,22 @@ from typing import Union, List
 import torch
 
 
+
 class TokenizerHGFLlama:
     def __init__(self, tokenizer):
         self.model = tokenizer
-        self.model.add_special_tokens({"additional_special_tokens": CONTROL_TOKENS_LIST})
-        self.model.update_post_processor()
-        self.pad_token_id = self.model.vocab[CONTROL_TOKENS.padding]
+        # self.model.add_special_tokens({"additional_special_tokens": CONTROL_TOKENS_LIST})
+        # self.model.update_post_processor()
+        # self.pad_token_id = self.model.vocab[CONTROL_TOKENS.padding]
+        # self.pad_token_id = self.model.vocab[self.model.eos_token]
+
+        self.pad_token_id = self.model.vocab["<|reserved_special_token_0|>"]
+        # self.pad_token_id = self.model.vocab["<0x00>"]
+        
         self.bos_token_id = self.model.vocab[self.model.bos_token]
         self.eos_token_id = self.model.vocab[self.model.eos_token]
+
+        self.vocab = dict(sorted(tokenizer.vocab.items(), key=lambda item: item[1]))
 
     def __call__(
         self, 
@@ -36,6 +44,9 @@ class TokenizerHGFLlama:
             max_length=max_length,
             return_tensors=return_tensors
         )
+    
+    def __len__(self):
+        return self.model.vocab_size
     
     def encode(
             self, 
@@ -83,9 +94,10 @@ class TokenizerHGFLlama:
         
         return self.model.decode([tk for tk in token_ids if tk != self.pad_token_id]) 
     
-    
     def get_vocab_size(self):
         return self.model.vocab_size
+    
+    
 
 base_lora_config = {
     "target_modules": ["q_proj", "v_proj", "o_proj",],
@@ -104,9 +116,16 @@ def hgface_handler(params):
     print(f"Loading model from {base_model}")
     tokenizer = params.get("tokenizer", "meta-llama/Llama-2-7b-hf")
     lora_config = params.get("lora", base_lora_config)
+    auth_token = os.environ.get("HGF_TOKEN", None)
+    model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype="auto", device_map="auto", token=auth_token)
 
-    model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype="auto", device_map="auto")
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer, token=auth_token)
+    tokenizer = TokenizerHGFLlama(tokenizer)
+    
+    print(tokenizer.vocab)
+    model.base_model.padding_id = tokenizer.pad_token_id
+    model.resize_token_embeddings(tokenizer.get_vocab_size())
+    
     lora_config = LoraConfig(
         **lora_config
         # target_modules=["q_proj", "v_proj", "o_proj", "gate_proj", "down_proj", "up_proj", "proj"],
@@ -118,6 +137,5 @@ def hgface_handler(params):
         # modules_to_save=['classifier'],
     )
     model = get_peft_model(model, lora_config)
-    tokenizer = TokenizerHGFLlama(tokenizer)
     return model, tokenizer, None
     

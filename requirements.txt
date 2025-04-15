@@ -1,20 +1,21 @@
+datasets
+evaluate
+fairscale
+llama-stack
 matplotlib
 numpy
 pandas
+peft
+python-dotenv
 PyTsetlinMachineCUDA
+pytorch-lightning
+rouge_score
 scikit_learn
 scipy
 tiktoken
 torch
-# torchvision
 # torchtext
+# torchvision
 torchmetrics
-datasets
-transformers
-evaluate
-rouge_score
 tqdm
-llama-stack
-pytorch-lightning
-fairscale
-python-dotenv
+transformers

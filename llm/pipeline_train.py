@@ -3,6 +3,7 @@ from llm.handlers.handler import model_handler
 from llm.wrapper import fsdp_wrapper
 from llm.trainer import Trainer
 from llm.eval import Evaluate
+from llm.module import summary
 
 from tm_data.fetch_data import InputCSV
 
@@ -75,7 +76,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     # Load tokenizer and model
     model, tokenizer, TransformerBlock = model_handler(model_params)
     # model = model.to(rank)
-
+    summary(model)
     # Load data
     # TODO: add to settings
     dataset_params = {
@@ -139,6 +140,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     else:
         model = model.to(get_device())
 
+    print("model.device", model.device)
     # Initialize optimizer
     lr = float(training_params["learning_rate"]) / training_params["batch_size"]
     weight_decay = float(training_params["weight_decay"])

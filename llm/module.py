@@ -48,3 +48,21 @@ class Module(nn.Module):
     
     def save_shapes(self) -> None:
         self.shapes = [ p.shape for p in self.parameters() ]
+    
+def nb_parameters(model: nn.Module) -> int:
+        '''Give the number of parameters of the module'''
+        return sum([np.prod(p.size(), dtype = np.int32) for p in model.parameters()])
+
+def nb_trainable_parameters(model: nn.Module) -> int:
+    '''Give the number of trainable parameters of the module'''
+    return sum([np.prod(p.size(), dtype = np.int32) for p in model.parameters() if p.requires_grad])
+
+def nb_non_trainable_parameters(model: nn.Module) -> int:
+    '''Give the number of non-trainable parameters of the module'''
+    return sum([np.prod(p.size(), dtype = np.int32) for p in model.parameters() if not p.requires_grad])
+
+def summary(model: nn.Module) -> None:
+    '''Summarize the module'''
+    print(f'Number of parameters: {nb_parameters(model):,}')
+    print(f'Number of trainable parameters: {nb_trainable_parameters(model):,}')
+    print(f'Number of non-trainable parameters: {nb_non_trainable_parameters(model):,}')
