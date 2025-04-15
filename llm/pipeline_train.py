@@ -1,6 +1,7 @@
 from llm.data.dataset import get_data
 from llm.handlers.handler import model_handler
 from llm.wrapper import fsdp_wrapper
+from llm.utils import get_model_dir
 from llm.trainer import Trainer
 from llm.eval import Evaluate
 from llm.module import summary
@@ -180,9 +181,12 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     print("Evaluation task initialized.")
     print("Train Metrics:", eval_train.result_keys)
     print("Val Metrics:", eval_val.result_keys)
-
-    csv_path = os.getenv(lctm_params["uq_path"]) + f"_{model_params['name']}_{args.train_mode}"
+    
+    m_dir = os.getenv(model_params["dir"])
+    model_dir = get_model_dir(model_params["name"],model_dir=m_dir, training_type=args.train_mode)
+    csv_path = model_dir / "fetched_training_data"
     print("CSV path:", csv_path)
+
     csv_object = InputCSV(
         model=model, 
         path=csv_path,
@@ -203,7 +207,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
         eval_train=eval_train,
         eval_val=eval_val,
         name=model_params["name"],
-        model_dir=os.getenv(model_params["dir"]),
+        model_dir=m_dir,
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
         pad_token_id=tokenizer.pad_token_id,
