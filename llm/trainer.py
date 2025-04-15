@@ -1,6 +1,6 @@
 from tm_data.fetch_data import InputCSV
 from llm.handlers.handler import ModelType
-from llm.utils import EarlyStopping
+from llm.utils import EarlyStopping, TrainingType, get_model_dir
 from utils import get_cuda_allocation, get_device
 
 
@@ -18,12 +18,8 @@ import math
 import pickle
 import time
 
-from enum import Enum
 
 
-class TrainingType(Enum):
-    BATCH = "batch"
-    ITER = "iter"
 
 
 class Trainer:
@@ -70,14 +66,13 @@ class Trainer:
         self.no_cuda = kwargs.get("no_cuda", False)
 
         training_type = kwargs.get("training_type", "normal")
-        assert training_type in TrainingType._value2member_map_, "Training type not supported. Choose between 'normal' and 'iter'"
+        assert training_type in TrainingType._value2member_map_, "Training type not supported. Choose between 'batch' and 'iter'"
         self.training_type = TrainingType(training_type)
 
-        self.name = kwargs.get("name", "model") + f".{self.training_type.value}"
-
         model_dir = kwargs.get("model_dir", "models/")
-        self.model_dir = Path(model_dir).joinpath(self.name)
-        self.model_dir.mkdir(parents=True, exist_ok=True)
+        name = kwargs.get("name", "model")
+        self.model_dir = get_model_dir(model_name=name, model_dir=model_dir, training_type=self.training_type.value)
+        self.name = name + f".{self.training_type.value}"
 
         self.bos_token_id = kwargs.get("bos_token_id", 0)
         self.eos_token_id = kwargs.get("eos_token_id", 0)
