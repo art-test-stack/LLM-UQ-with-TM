@@ -230,25 +230,23 @@ class Trainer:
 
 
     def _get_train_val_loops(self):
-        if self.model_type == "hgface2":
-            if self.training_type == TrainingType.BATCH:
-                return self._train_hgface_epoch, self._val_hgface_epoch
-            else:
-                Warning("Only batch training is supported for hgface models. Continuing with batch training.")
-                return self._train_hgface_epoch, self._val_hgface_epoch
+        # if self.model_type == "hgface2":
+        #     if self.training_type == TrainingType.BATCH:
+        #         return self._train_hgface_epoch, self._val_hgface_epoch
+        #     else:
+        #         Warning("Only batch training is supported for hgface models. Continuing with batch training.")
+        #         return self._train_hgface_epoch, self._val_hgface_epoch
+        # else:
+        if self.training_type == TrainingType.BATCH:
+            return self._train_epoch, self._val_epoch
+        elif self.training_type == TrainingType.ITER:
+            return self._iter_train_epoch, self._iter_val_epoch
         else:
-            if self.training_type == TrainingType.BATCH:
-                return self._train_epoch, self._val_epoch
-            elif self.training_type == TrainingType.ITER:
-                return self._iter_train_epoch, self._iter_val_epoch
-            else:
-                raise NotImplementedError(f"Training type {self.training_type} not supported.")
+            raise NotImplementedError(f"Training type {self.training_type} not supported.")
     
     def _get_batched_logits(self, input_ids: torch.Tensor, mask: torch.Tensor):
         output = self.model(input_ids, mask=mask)
-        
         return output
-    
     
     def _get_batched_hgf_logits(self, input_ids: torch.Tensor, mask: torch.Tensor):
         past_key_values = DynamicCache()
@@ -269,7 +267,7 @@ class Trainer:
         vocab_size = self.model.vocab_size
 
         get_logits = self._get_batched_hgf_logits if self.model_type == "hgface" else self._get_batched_logits
-
+        device_type = "cuda" if torch.cuda.is_available() and not self.no_cuda else "mps"
         for i, batch in enumerate(train_loader):
             input_ids = batch["input_ids"].to(self.rank)
             labels = batch["labels"].to(self.rank)

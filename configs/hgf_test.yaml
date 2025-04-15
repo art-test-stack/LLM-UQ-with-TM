@@ -19,12 +19,17 @@ model:
     bias: "none"
     lora_dropout: 0.1
     modules_to_save:
-      - "classifier"
+      - "classifier"  
+  special_tokens:
+    pad_token: "<|reserved_special_token_0|>"
+    bos_token: "<|begin_of_text|>"
+    eos_token: "<|end_of_text|>"
+    
 
 training:
   batch_size: 1
   test_batch_size: 16
-  epochs: 3000
+  epochs: 1
   learning_rate: 5e-5
   step_size: 20
   gamma: 0.7

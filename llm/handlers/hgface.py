@@ -1,5 +1,5 @@
 
-from llm.data.tokenizer import Tokenizer, CONTROL_TOKENS_LIST
+from llm.data.tokenizer import BASE_SPECIAL_TOKENS
 import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForQuestionAnswering
 from peft import LoraConfig, TaskType, get_peft_model
@@ -7,26 +7,24 @@ from peft import LoraConfig, TaskType, get_peft_model
 import torch
 import os
 
-from llm.data.tokenizer import CONTROL_TOKENS_LIST, CONTROL_TOKENS
 from typing import Union, List
-import torch
 
 
 
 class TokenizerHGFLlama:
-    def __init__(self, tokenizer):
+    def __init__(self, tokenizer, special_tokens: dict = None):
         self.model = tokenizer
         # self.model.add_special_tokens({"additional_special_tokens": CONTROL_TOKENS_LIST})
         # self.model.update_post_processor()
         # self.pad_token_id = self.model.vocab[CONTROL_TOKENS.padding]
         # self.pad_token_id = self.model.vocab[self.model.eos_token]
 
-        self.pad_token_id = self.model.vocab["<|reserved_special_token_0|>"]
+        self.pad_token_id = self.model.vocab[special_tokens["pad_token"]]
         print("Pad token id:", self.pad_token_id)
         # self.pad_token_id = self.model.vocab["<0x00>"]
         
-        self.bos_token_id = self.model.vocab[self.model.bos_token]
-        self.eos_token_id = self.model.vocab[self.model.eos_token]
+        self.bos_token_id = self.model.vocab[special_tokens["bos_token"]]
+        self.eos_token_id = self.model.vocab[special_tokens["eos_token"]]
 
         self.vocab = dict(sorted(tokenizer.vocab.items(), key=lambda item: item[1]))
         self.max_token_id = max(self.vocab.values())
@@ -100,7 +98,6 @@ class TokenizerHGFLlama:
         return max(self.vocab.values())
     
     
-
 base_lora_config = {
     "target_modules": ["q_proj", "v_proj", "o_proj",],
     "r": 16,
@@ -109,6 +106,7 @@ base_lora_config = {
     "bias": 'none',
     "modules_to_save": ['classifier'],
 }
+
 def hgface_handler(params):
     """
     Load model and tokenizer based on the type of model.
@@ -122,7 +120,8 @@ def hgface_handler(params):
     model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype="auto", device_map="auto", token=auth_token)
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer, token=auth_token)
-    tokenizer = TokenizerHGFLlama(tokenizer)
+    special_tokens = params.get("special_tokens", BASE_SPECIAL_TOKENS)
+    tokenizer = TokenizerHGFLlama(tokenizer, special_tokens)
     
     print(tokenizer.vocab)
     model.base_model.padding_id = tokenizer.pad_token_id

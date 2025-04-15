@@ -25,6 +25,11 @@ class CONTROL_TOKENS:
     end_of_hint = '<|endofhint|>'
 
 CONTROL_TOKENS_LIST = list(CONTROL_TOKENS.__dict__.values())[1:-3]
+BASE_SPECIAL_TOKENS = {
+    "pad_token": CONTROL_TOKENS.padding,
+    "bos_token": CONTROL_TOKENS.start_of_text,
+    "eos_token": CONTROL_TOKENS.end_of_text,
+}
 tiktoken_models = list(tiktoken.model.MODEL_TO_ENCODING.keys())
 
 import numpy as np

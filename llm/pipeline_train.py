@@ -72,7 +72,6 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     model_params = params["model"]
     training_params = params["training"]
     data_params = params["data"]
-    lctm_params = params["lctm"]
 
     # Load tokenizer and model
     model, tokenizer, TransformerBlock = model_handler(model_params)
