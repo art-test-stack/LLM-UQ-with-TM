@@ -243,12 +243,32 @@ class Trainer:
                 return self._iter_train_epoch, self._iter_val_epoch
             else:
                 raise NotImplementedError(f"Training type {self.training_type} not supported.")
-            
+    
+    def _get_batched_logits(self, input_ids: torch.Tensor, mask: torch.Tensor):
+        output = self.model(input_ids, mask=mask)
+        
+        return output
+    
+    
+    def _get_batched_hgf_logits(self, input_ids: torch.Tensor, mask: torch.Tensor):
+        past_key_values = DynamicCache()
+        cache_position = torch.arange(0, input_ids.size(1), device=self.rank)
+        output = self.model(
+            input_ids, 
+            mask=mask, 
+            past_key_values=past_key_values, 
+            do_sample=False, 
+            cache_position=cache_position
+        ).logits
+
+        return output
 
     def _train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
         vocab_size = self.model.vocab_size
+
+        get_logits = self._get_batched_hgf_logits if self.model_type == "hgface" else self._get_batched_logits
 
         for i, batch in enumerate(train_loader):
             input_ids = batch["input_ids"].to(self.rank)
@@ -258,11 +278,8 @@ class Trainer:
             
             del batch
             assert not torch.isnan(input_ids).any(), "NaN found in sources!"
-            past_key_values = DynamicCache()
-            cache_position = torch.arange(0, input_ids.size(1) - 1, device=self.rank) #.unsqueeze(0).expand(input_ids.size(0), -1)
             with torch.autocast(device_type="cuda", dtype=torch.float32):
-                output = self.model(input_ids, mask=mask, past_key_values=past_key_values, do_sample=False, cache_position=cache_position)
-                output = output[:, start_pos:]
+                output = get_logits(input_ids, mask=mask)[:, start_pos:]
                 del mask
                 loss = self.loss_fn(output.reshape(-1, vocab_size), labels.reshape(-1))
                 loss = loss
@@ -297,7 +314,9 @@ class Trainer:
     def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)
-        
+
+        get_logits = self._get_batched_hgf_logits if self.model_type == "hgface" else self._get_batched_logits
+
         with torch.no_grad():
             for i, batch in enumerate(val_loader):
                 input_ids = batch["input_ids"].to(self.rank)
@@ -310,7 +329,7 @@ class Trainer:
                 vocab_size = self.model.vocab_size
 
                 with torch.autocast(device_type=f"cuda", dtype=torch.float32):
-                    output = self.model(input_ids, mask=mask)[:,start_pos:]
+                    output = get_logits(input_ids, mask=mask)[:,start_pos:]
                     logits = output.reshape(-1, vocab_size)
 
                     loss = self.loss_fn(logits, labels.reshape(-1))
@@ -338,6 +357,8 @@ class Trainer:
         ddp_loss = torch.zeros(2).to(self.rank)
         vocab_size = self.model.vocab_size
 
+        get_logits = self._get_batched_hgf_logits if self.model_type == "hgface" else self._get_batched_logits
+
         for i, batch in enumerate(train_loader):
             input_ids = batch["input_ids"].to(self.rank)
             labels = batch["labels"].to(self.rank)
@@ -352,7 +373,8 @@ class Trainer:
 
             for idx in range((end_positions.max() - start_pos - 1)):
                 # with torch.autocast(device_type="cuda", dtype=torch.float32):
-                output = self.model(input_ids[:, :start_pos + idx], mask=mask[:, :start_pos + idx, :start_pos + idx])[:, -1]
+                output = get_logits(input_ids=input_ids[:, :start_pos + idx], mask=mask[:, :start_pos + idx, :start_pos + idx])[:, -1]
+                # output = self.model(input_ids[:, :start_pos + idx], mask=mask[:, :start_pos + idx, :start_pos + idx])[:, -1]
                 loss = self.loss_fn(output.reshape(-1, vocab_size), labels[:,idx].reshape(-1))
                 loss = loss
                 logits[:, idx] = output
@@ -391,6 +413,8 @@ class Trainer:
         self.model.eval()
         ddp_loss = torch.zeros(2, device=self.rank)
         vocab_size = self.model.vocab_size
+
+        get_logits = self._get_batched_hgf_logits if self.model_type == "hgface" else self._get_batched_logits
         
         with torch.no_grad():
             for i, batch in enumerate(val_loader):
@@ -406,7 +430,8 @@ class Trainer:
                 logits = torch.zeros((labels.size(0), labels.size(1), vocab_size), device=self.rank)
                 for idx in range(end_positions.max() - start_pos - 1):
                     with torch.autocast(device_type="cuda", dtype=torch.float32):
-                        output = self.model(input_ids[:, :start_pos + idx], mask=mask[:,:start_pos + idx, :start_pos + idx])[:, -1]
+                        output = get_logits(input_ids=input_ids[:, :start_pos + idx], mask=mask[:, :start_pos + idx, :start_pos + idx])[:, -1]
+                        # output = self.model(input_ids[:, :start_pos + idx], mask=mask[:,:start_pos + idx, :start_pos + idx])[:, -1]
                         logits[:, idx] = output
                         
                         loss = self.loss_fn(output.reshape(-1, vocab_size), labels[:, idx].reshape(-1))

@@ -213,6 +213,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
         pad_token_id=tokenizer.pad_token_id,
         no_cuda=args.no_cuda,
         training_type=args.train_mode,
+        model_type=model_params["type"],
     )
     # Model checkpoint saving, by saving to the rank0 CPU
     # https://pytorch.org/tutorials/intermediate/FSDP_adavnced_tutorial.html#model-checkpoint-saving-by-streaming-to-the-rank0-cpu
