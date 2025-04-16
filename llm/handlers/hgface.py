@@ -1,5 +1,4 @@
-
-from llm.data.tokenizer import BASE_SPECIAL_TOKENS
+from llm.data.special_tokens import SpecialTokens
 import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForQuestionAnswering
 from peft import LoraConfig, TaskType, get_peft_model
@@ -12,19 +11,19 @@ from typing import Union, List
 
 
 class TokenizerHGFLlama:
-    def __init__(self, tokenizer, special_tokens: dict = None):
+    def __init__(self, tokenizer, special_tokens: SpecialTokens = SpecialTokens()):
         self.model = tokenizer
         # self.model.add_special_tokens({"additional_special_tokens": CONTROL_TOKENS_LIST})
         # self.model.update_post_processor()
         # self.pad_token_id = self.model.vocab[CONTROL_TOKENS.padding]
         # self.pad_token_id = self.model.vocab[self.model.eos_token]
 
-        self.pad_token_id = self.model.vocab[special_tokens["pad_token"]]
+        self.pad_token_id = self.model.vocab[special_tokens.pad]
         print("Pad token id:", self.pad_token_id)
         # self.pad_token_id = self.model.vocab["<0x00>"]
         
-        self.bos_token_id = self.model.vocab[special_tokens["bos_token"]]
-        self.eos_token_id = self.model.vocab[special_tokens["eos_token"]]
+        self.bos_token_id = self.model.vocab[special_tokens.start_of_text]
+        self.eos_token_id = self.model.vocab[special_tokens.end_of_text]
 
         self.vocab = dict(sorted(tokenizer.vocab.items(), key=lambda item: item[1]))
         self.max_token_id = max(self.vocab.values())
@@ -120,10 +119,12 @@ def hgface_handler(params):
     model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype="auto", device_map="auto", token=auth_token)
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer, token=auth_token)
-    special_tokens = params.get("special_tokens", BASE_SPECIAL_TOKENS)
+    special_tokens = params.get("special_tokens", SpecialTokens())
+    special_tokens = SpecialTokens(**special_tokens)
     tokenizer = TokenizerHGFLlama(tokenizer, special_tokens)
     
     print(tokenizer.vocab)
+    # TODO: Check if it is done correctly
     model.base_model.padding_id = tokenizer.pad_token_id
     model.resize_token_embeddings(tokenizer.max_token_id)
     
@@ -138,5 +139,5 @@ def hgface_handler(params):
         # modules_to_save=['classifier'],
     )
     model = get_peft_model(model, lora_config)
-    return model, tokenizer, None
+    return model, tokenizer, None, special_tokens
     

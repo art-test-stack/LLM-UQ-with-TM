@@ -1,15 +1,15 @@
 import regex
-
-from llm.data.tokenizer import CONTROL_TOKENS_LIST
+from llm.data.special_tokens import SpecialTokens
 
 from tokenizers import NormalizedString, PreTokenizedString
 import regex
 
+# TODO: handle special tokens in a better way
 def split(text: str) -> list[str]:
     if text == '':
         return []
 
-    safe_control_tokens = [regex.escape(c) for c in CONTROL_TOKENS_LIST]
+    safe_control_tokens = [regex.escape(c) for c in SpecialTokens().list()]
     # reg = r'(' + r'|'.join(safe_control_tokens) + r'|\d+|\s+|\p{L}+|[^\d\p{L}\s' + r''.join([f'[{i}]' for i in safe_control_tokens]) + r']+)'
     reg = (
         r'(' + 
@@ -26,11 +26,11 @@ def split(text: str) -> list[str]:
     temp = []
     i = 0
     while i < len(words) - 1:
-        if words[i] == ' ' and words[i + 1] not in CONTROL_TOKENS_LIST:
+        if words[i] == ' ' and words[i + 1] not in SpecialTokens().list():
             temp.append(' ' + words[i + 1])
             i += 2
             continue
-        if words[i].endswith(' ') and words[i + 1] not in CONTROL_TOKENS_LIST:
+        if words[i].endswith(' ') and words[i + 1] not in SpecialTokens().list():
             temp.extend([words[i][:-1], ' ' + words[i + 1]])
             i += 2
             continue

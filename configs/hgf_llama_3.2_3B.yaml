@@ -20,6 +20,10 @@ model:
     lora_dropout: 0.1
     modules_to_save:
       - "classifier"
+  special_tokens:
+    pad: "<|reserved_special_token_0|>"
+    begin_of_text: "<|begin_of_text|>"
+    end_of_text: "<|end_of_text|>"
     
 
 training:

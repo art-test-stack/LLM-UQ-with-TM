@@ -21,9 +21,9 @@ model:
     modules_to_save:
       - "classifier"
   special_tokens:
-    pad_token: "<|reserved_special_token_0|>"
-    bos_token: "<|begin_of_text|>"
-    eos_token: "<|end_of_text|>"
+    pad: "<|reserved_special_token_0|>"
+    begin_of_text: "<|begin_of_text|>"
+    end_of_text: "<|end_of_text|>"
     
 
 training:

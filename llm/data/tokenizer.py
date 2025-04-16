@@ -1,30 +1,40 @@
+from llm.data.special_tokens import SpecialTokens
 from pathlib import Path
 from typing import List, Union
 
 import tiktoken
 from tiktoken import _tiktoken
 
+
+# @DeprecationWarning("This class is deprecated. Use SPECIAL_TOKENS instead.")
 class CONTROL_TOKENS:
     padding = '<|padding|>'
     unknown = '<|unknown|>'
     tab = '<|tab|>'
     new_line = '<|new_line|>'
-    start_of_text = '<|begin_of_text|>'
-    end_of_text = '<|end_of_text|>'
-    start_of_table = '<|startoftable|>'
-    end_of_table = '<|endoftable|>'
-    start_of_description = '<|startofdescription|>'
-    end_of_description = '<|endofdescription|>'
-    start_of_program = '<|startofprogram|>'
-    end_of_program = '<|endofprogram|>'
-    start_of_question = '<|startofquestion|>'
-    end_of_question = '<|endofquestion|>'
-    start_of_context = '<|startofcontext|>'
-    end_of_context = '<|endofcontext|>'
-    start_of_hint = '<|startofhint|>'
-    end_of_hint = '<|endofhint|>'
+    bos = '<|begin_of_text|>'
+    eos = '<|end_of_text|>'
+    shi = '<|start_of_header|>'
+    eoh = '<|end_of_header|>'
+    eot = '<|eot_id|>'
+    # DEPRECATED PART
+    start_of_text = '<|startoftext|>'
+    end_of_text = ''
 
-CONTROL_TOKENS_LIST = list(CONTROL_TOKENS.__dict__.values())[1:-3]
+    # start_of_table = '<|startoftable|>'
+    # end_of_table = '<|endoftable|>'
+    # start_of_description = '<|startofdescription|>'
+    # end_of_description = '<|endofdescription|>'
+    # start_of_program = '<|startofprogram|>'
+    # end_of_program = '<|endofprogram|>'
+    # start_of_question = '<|startofquestion|>'
+    # end_of_question = '<|endofquestion|>'
+    # start_of_context = '<|startofcontext|>'
+    # end_of_context = '<|endofcontext|>'
+    # start_of_hint = '<|startofhint|>'
+    # end_of_hint = '<|endofhint|>'
+
+# @DeprecationWarning("This class is deprecated. Use llm.special_tokens.SpecialTokens() instead.")
 BASE_SPECIAL_TOKENS = {
     "pad_token": CONTROL_TOKENS.padding,
     "bos_token": CONTROL_TOKENS.start_of_text,
@@ -39,9 +49,7 @@ class Tokenizer:
     def __init__(
             self,
             model_name: str = "gpt-4o",
-            pad_token: str = CONTROL_TOKENS.padding,
-            bos_token: str = CONTROL_TOKENS.start_of_text,
-            eos_token: str = CONTROL_TOKENS.end_of_text,
+            special_tokens: SpecialTokens = SpecialTokens(),
         ) -> None:
         assert model_name in tiktoken_models, f"'{model_name}' is not a provided model"
         self.model = tiktoken.encoding_for_model(model_name)
@@ -55,12 +63,12 @@ class Tokenizer:
         # IF NOT USED, THE SPECIAL TOKENS ARE NOT ADDED
         self.pad_token_id = 0 
 
-        self.add_special_tokens([pad_token, bos_token, eos_token])
+        self.add_special_tokens(special_tokens.list())
 
         self._compute_vocab_size()
-        self.pad_token_id = self.special_tokens[pad_token]
-        self.bos_token_id = self.special_tokens[bos_token]
-        self.eos_token_id = self.special_tokens[eos_token]
+        self.pad_token_id = self.special_tokens[special_tokens.pad]
+        self.bos_token_id = self.special_tokens[special_tokens.start_of_text]
+        self.eos_token_id = self.special_tokens[special_tokens.end_of_text]
 
         self._compute_vocab_size()
 
@@ -71,7 +79,6 @@ class Tokenizer:
         self.vocab_size = self.model.n_vocab # - len(self._get_missing_idx())
 
     def add_special_tokens(self, special_tokens: Union[List[str],str]) -> None:
-        print()
         special_tokens = special_tokens if isinstance(special_tokens, list) else list(special_tokens)
         special_tokens = [str(special_token) for special_token in special_tokens if special_token not in self.model._special_tokens] 
         missing_token_idx = self._get_missing_idx()
@@ -131,7 +138,7 @@ class Tokenizer:
         token_ids = self.model.encode(text, allowed_special="all")
         
         if add_control_tokens:
-            token_ids = [self.special_tokens[CONTROL_TOKENS.start_of_text]] + token_ids + [self.special_tokens[CONTROL_TOKENS.end_of_text]]
+            token_ids = [self.bos_token_id] + token_ids + [self.eos_token_id]
 
         if padding:
             token_ids = self.pad_sequence(token_ids, max_length)

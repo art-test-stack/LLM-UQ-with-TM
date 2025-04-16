@@ -1,4 +1,4 @@
-from llm.data.tokenizer import CONTROL_TOKENS, CONTROL_TOKENS_LIST
+from llm.data.special_tokens import SpecialTokens
 from llm.data.pretokenizer import PreTokenizer
 
 import torch
@@ -45,7 +45,7 @@ class GloVeTokenizer:
             self.model.pre_tokenizer = pre_tokenizers.PreTokenizer.custom(PreTokenizer(strip))
         else:
             vocab_path = str(Path(glove_dir) / 'vocab.json')
-            self.model = Tokenizer(models.WordLevel(vocab_path, unk_token=CONTROL_TOKENS.unknown))
+            self.model = Tokenizer(models.WordLevel(vocab_path, unk_token=SpecialTokens().unknown))
             self.model.normalizer = normalizers.Sequence(
                 [normalizers.NFD(), normalizers.Lowercase(), normalizers.StripAccents()]
             )
@@ -147,16 +147,16 @@ def create_special_token_embedding(embeddings: np.ndarray | None = None, dim_emb
 
 def add_special_tokens(vocab: Dict[str, int], dim_emb: int):
     embeddings: List[np.ndarray] = []
-    for idx, token in enumerate(CONTROL_TOKENS_LIST):
+    for idx, token in enumerate(SpecialTokens().list()):
         if token not in vocab.keys():
             vocab[token] = idx
-            emb = create_special_token_embedding(embeddings, dim_emb=dim_emb) if not token == CONTROL_TOKENS.padding else np.zeros(dim_emb)
+            emb = create_special_token_embedding(embeddings, dim_emb=dim_emb) if not token == SpecialTokens().pad else np.zeros(dim_emb)
             embeddings.append(emb)
 
     special_tokens = {
-        'pad_token_id': vocab[CONTROL_TOKENS.padding],
-        'bos_token_id': vocab[CONTROL_TOKENS.start_of_text],
-        'eos_token_id': vocab[CONTROL_TOKENS.end_of_text],
+        'pad_token_id': vocab[SpecialTokens().pad],
+        'bos_token_id': vocab[SpecialTokens().start_of_text],
+        'eos_token_id': vocab[SpecialTokens().end_of_text],
     }
     return vocab, embeddings, special_tokens
 
@@ -252,7 +252,12 @@ def load_glove_embs(glove_dir: str):
     return embeddings, special_tokens
 
 
-def get_glove_tokenizer_and_embeddings(glove_path: str, model_name: str, dim_model: int = 512, force_init: bool = False):
+def get_glove_tokenizer_and_embeddings(
+        glove_path: str, 
+        model_name: str, 
+        dim_model: int = 512, 
+        force_init: bool = False
+    ):
     """"
     Get the GloVe tokenizer and embedding"
     

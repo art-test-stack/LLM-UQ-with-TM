@@ -29,13 +29,13 @@ def model_handler(params: Dict):
     assert params["type"] in ModelType._value2member_map_, "Model type not supported"
 
     if params["type"] == "llama":
-        model, tokenizer, TransformerBlock = llama_handler(params)
+        model, tokenizer, TransformerBlock, special_tokens = llama_handler(params)
     elif params["type"] == "torch":
-        model, tokenizer, TransformerBlock = torch_handler(params)
+        model, tokenizer, TransformerBlock, special_tokens = torch_handler(params)
     elif params["type"] == "hgface":
-        model, tokenizer, TransformerBlock = hgface_handler(params)
+        model, tokenizer, TransformerBlock, special_tokens = hgface_handler(params)
     else:
         raise ValueError("Model type not supported")
     print("Model and tokenizer loaded!")
 
-    return model, tokenizer, TransformerBlock
+    return model, tokenizer, TransformerBlock, special_tokens

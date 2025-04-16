@@ -1,4 +1,4 @@
-from llm.data.tokenizer import CONTROL_TOKENS, CONTROL_TOKENS_LIST
+from llm.data.special_tokens import SpecialTokens
 from utils import get_device
 
 from llama_models.llama3.reference_impl.generation import Llama
@@ -54,10 +54,10 @@ class TokenizerHandler:
     def get_vocab_size(self):
         return self.model.n_vocab
     
-    def add_control_tokens(self, control_tokens):
-        for token in control_tokens:
+    def add_control_tokens(self, special_tokens: SpecialTokens):
+        for attr, token in special_tokens.__dict__.items():
             reserved_special_tokens = get_reserved_special_tokens(self.main.num_reserved_special_tokens)
-            if token == CONTROL_TOKENS.padding and "<|reserved_special_token_1|>" in self.special_tokens:
+            if attr == "pad" and "<|reserved_special_token_1|>" in self.special_tokens:
                     self.special_tokens[token] = self.special_tokens.pop("<|reserved_special_token_1|>")
                     # reserved_special_tokens.remove("<|reserved_special_token_1|>")
             for reserved_token in reserved_special_tokens:
@@ -78,9 +78,9 @@ class TokenizerHandler:
             special_tokens=self.special_tokens,
         )
 
-        self.pad_token_id = self.special_tokens[CONTROL_TOKENS.padding] 
-        self.bos_token_id = self.special_tokens[CONTROL_TOKENS.start_of_text] 
-        self.eos_token_id = self.special_tokens[CONTROL_TOKENS.end_of_text] 
+        self.pad_token_id = self.special_tokens[special_tokens.pad] 
+        self.bos_token_id = self.special_tokens[special_tokens.start_of_text] 
+        self.eos_token_id = self.special_tokens[special_tokens.end_of_text] 
 
     def decode(self, token_ids):
         if isinstance(token_ids, torch.Tensor):
@@ -147,7 +147,7 @@ def llama_forward(self, src: torch.Tensor, start_pos: int = 1, mask: torch.Tenso
     
     return output
 
-
+# @DeprecationWarning("This function is deprecated. Use hugging face handler with the corresponding Llama model instead.")
 def llama_handler(params):
     ckpt_dir = os.getenv(params["ckpt_dir"])
     ckpt_dir = Path(ckpt_dir).joinpath(params["name"])
@@ -164,7 +164,10 @@ def llama_handler(params):
     
     tknzr = llama_obj.tokenizer
     tokenizer = TokenizerHandler(tknzr)
-    tokenizer.add_control_tokens(CONTROL_TOKENS_LIST)
+    special_tokens = params.get("special_tokens", {})
+    special_tokens = SpecialTokens(**special_tokens)
+
+    tokenizer.add_control_tokens(special_tokens)
     print(tokenizer.decode(tokenizer("Does it work?", padding="None",return_tensors=False)))
-    return model, tokenizer, TransformerBlock
+    return model, tokenizer, TransformerBlock, special_tokens
 

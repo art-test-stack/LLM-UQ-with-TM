@@ -1,11 +1,21 @@
-from llm.data.tokenizer import Tokenizer, CONTROL_TOKENS
+from llm.data.special_tokens import SpecialTokens
+from llm.data.tokenizer import Tokenizer
 import datasets
 
 import torch
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 
-from typing import Any, Tuple, Union, List
+from datetime import datetime
+from typing import Any, Tuple, Union, List, Dict
+
+special_characters = [
+    # "%",
+    ",",
+    ":",
+    ";"
+]
+div_operations = [":", "/"]
 
 
 class FinQADataset(Dataset):
@@ -18,13 +28,16 @@ class FinQADataset(Dataset):
             short_answer: bool = True,
             hint: bool = False,
             easy_task: bool = False,
-            pad_all_answers: bool = False
+            pad_all_answers: bool = False,
+            **kwargs: Dict[str, Any]
         ) -> None:
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.max_q_len = max_length - max_a_length
         self.max_a_len = max_a_length
         self.pad_all_answers = pad_all_answers
+        self.special_tokens: SpecialTokens = kwargs.get("special_tokens", SpecialTokens())
+        self.instruct = kwargs.get("instruct", False)
         
         if hint and not short_answer:
             print("Warning: Hint is only available for short answer. Ignoring the hint parameter.")
@@ -48,58 +61,68 @@ class FinQADataset(Dataset):
         res["mask"] = mask
         return res
     
-    def make_question(self, data):
-        # PREPARE QUESTION
-        pre_text = data["pre_text"]
-        while type(pre_text) == list:
-            pre_text = ("").join(pre_text)
-        post_text = data["post_text"]
-        while type(post_text) == list:
-            post_text = ("").join(post_text)
-        table = str(data["table"])
-        _question = data["question"]
+    def make_qa_pair(self, data):
+        # CLEAN TEXT CONTEXT
+        pre_text = clean_text(data["pre_text"])
+        post_text = clean_text(data["post_text"])
 
         # WRAP TABLE
-        def format_table(table_str):
-            table_str = table_str.replace("[[", "[\n    [")
-            table_str = table_str.replace("], [", "],\n    [")
-            table_str = table_str.replace("]]", "]\n]")
-            return table_str
-        # formatted_table = format_table(table)
+        table = format_table(data["table"])
 
-        question = ""
+        # PREPARE QUESTION
+        _question = data["question"]
+
+        _answer = self.make_answer(data)
+
+        answer_type = get_answer_formats(_answer)
+        instruction = make_instruction(answer_type)
+        
+        # WRAP QUESTION
+        question = f"{self.special_tokens.start_of_text}{self.special_tokens.start_of_header}"
+        if self.instruct:
+            question += f"system{self.special_tokens.end_of_header}"
+            question += f"\n\nCutting Knowledge Date: December 2023\nToday Date: {datetime.now().strftime('%d %b %Y')}"
+            question += f"\n\nYou are a financial question answering chatbot. {'inputs'} are given to you. You need to reasonnate on the data to answer the question. {instruction}{self.special_tokens.eot_id}{self.special_tokens.start_of_header}"
         if pre_text and not self.easy_task:
-            question += f"""{CONTROL_TOKENS.start_of_context}{pre_text}{CONTROL_TOKENS.end_of_context}"""
+            question += f"pre_text{self.special_tokens.end_of_header}"
+            question += f"\n\nPre-text: {pre_text}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"
         if table and not self.easy_task:
-            question += f"""{CONTROL_TOKENS.start_of_table}{table}{CONTROL_TOKENS.end_of_table}"""
+            question += f"table{self.special_tokens.end_of_header}"
+            question += f"\n\nTable: {table}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"
         if post_text and not self.easy_task:
-            question += f"""{CONTROL_TOKENS.start_of_description}{post_text}{CONTROL_TOKENS.end_of_description}"""
-        hint = data['gold_inds']
+            question += f"table{self.special_tokens.end_of_header}"
+            question += f"\n\Post-text: {post_text}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"
+        hint = clean_text(data['gold_inds'])
         
         if (self.hint and self.short_answer and hint) or self.easy_task:
-            question += f"{CONTROL_TOKENS.start_of_hint}{hint}{CONTROL_TOKENS.end_of_hint}"
-        question += f"{CONTROL_TOKENS.start_of_question}{_question}{CONTROL_TOKENS.end_of_question}"
+            question += f"hint{self.special_tokens.end_of_header}"
+            question += f"\n\nHint: {post_text}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"
+        question += f"user{self.special_tokens.end_of_header}"
+        question += f"\n\nQuestion: {_question}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"
+        question += f"assistant{self.special_tokens.end_of_header}\n\n"
 
-        return question
+        # PREPARE ANSWER
+        answer = f"{self.special_tokens.start_of_answer}{_answer}{self.special_tokens.end_of_text}" 
+        # if (not self.short_answer) and (not self.easy_task):
+        #     answer += f"{SPECIAL_TOKENS.start_of_program}{program}{SPECIAL_TOKENS.end_of_program}"
+        answer += f"{self.special_tokens.end_of_text}"
+
+        return question, answer
 
     def make_answer(self, data):
         # PREPARE ANSWER
         if self.short_answer:
-            _answer = data["final_result"] if data["answer"] == "" else min(data["answer"], data["final_result"], key=len)
-            _answer = _answer if _answer else data["answer"] 
+            _answer = clean_answer(data)
         else:
+            raise NotImplementedError("Only short_answer is supported for now.")
             _answer = data["gold_inds"]
             while type(_answer) == list:
                 _answer = ("").join(_answer)
             program = data["program_re"]
 
-        answer = f"{CONTROL_TOKENS.start_of_text}{_answer}" 
-        if (not self.short_answer) and (not self.easy_task):
-            answer += f"{CONTROL_TOKENS.start_of_program}{program}{CONTROL_TOKENS.end_of_program}"
-        answer += f"{CONTROL_TOKENS.end_of_text}"
-
-        return answer
+        return _answer
     
+    # @DeprecationWarning("Deprecated in favor of make_mask")
     def make_mask_old(self, idx: int):
         len_q = self.encodings["len_q"][idx]
         start_pos = self.encodings["start_positions"][idx]
@@ -130,8 +153,7 @@ class FinQADataset(Dataset):
 
     def read_data(self, data):
         # GET QUESTION AND ANSWER
-        question = self.make_question(data)
-        answer = self.make_answer(data)
+        question, answer = self.make_qa_pair(data)
 
         data["question_text"] = question
         data["answer_text"] = answer
@@ -162,7 +184,88 @@ class FinQADataset(Dataset):
         input_ids = input_ids.numpy()
         labels = labels.numpy()
         return input_ids, labels, start_pos, end_positions, len_q
+
+
+def clean_text(corpus: List[str]) -> str:
+    corpus = [text for text in corpus if text != "."]
+    for cha in special_characters:
+        corpus = [text.replace(f" {cha}", cha) for text in corpus]
+    corpus = [text[:-2] + "." if text.endswith(" .") else text for text in corpus]
+    corpus = [text.capitalize() for text in corpus]
+    corpus = " ".join(corpus)
+    return corpus
+
+def format_table(table, row_separator="\n", field_separator="; "):
+    """
+    Converts a 2D list table into a CLM-friendly string.
     
+    Args:
+        table (list of list of str): The input table in the format [
+            ['', 'header_1', ..., 'header_m'],
+            ['entry_1', 'value_11', ..., 'value_1m'],
+            ...
+        ]
+        row_prefix (str): Optional prefix for each entry.
+        row_separator (str): Separator between rows.
+        field_separator (str): Separator between fields in a row.
+        
+    Returns:
+        str: Formatted string ready for causal language modeling.
+    """
+    if not table or len(table) < 2:
+        return ""
+
+    headers = table[0][1:]  # Skip the empty top-left cell
+    entries = table[1:]
+
+    formatted_rows = []
+    for row in entries:
+        entry_name = row[0]
+        values = row[1:]
+        fields = [f"{header}: {value}" for header, value in zip(headers, values)]
+        row_text = f"{entry_name}: " + field_separator.join(fields)
+        formatted_rows.append(row_text)
+
+    return row_separator.join(formatted_rows)
+
+def get_answer_formats(answer):
+    # answer = answer.replace(" ", "")
+    try: 
+        answer = int(answer)
+        return "an integer"
+    except:
+        try:
+            answer = float(answer)
+            return "a float"
+        except:
+            if "%" in answer:
+                return "a percentage"
+            elif answer == "ye" or answer == "yes" or answer == "no":
+                return "'yes' or 'no'"
+            elif "$" in answer:
+                return "a currency"
+            else:
+                return "unknown"
+
+
+def make_instruction(answer_type):
+    if answer_type == "unknown":
+        instruction = "Please provide a short answer."
+    else:
+        instruction = f"Please provide the answer as {answer_type}."
+    return instruction
+
+
+def clean_answer(data):
+    _answer = data["final_result"] if data["answer"] == "" else min(data["answer"], data["final_result"], key=len)
+    _answer = _answer if _answer else data["answer"] 
+    for op in div_operations:
+        if op in _answer:
+            quotient, div = _answer.split(op)[0], _answer.split(op)[1]
+            _answer = f"{float(quotient) / float(div):.2f}"
+    if get_answer_formats(_answer) == "unknown":
+        _answer = data["final_result"]
+    return _answer
 
 def pad_sequence(token_ids: Union[torch.Tensor, np.ndarray], max_length: int, pad_token_id: int) -> torch.Tensor:
     token_instance = token_ids  # Store the original token_ids instance
@@ -197,7 +300,8 @@ def get_data(
         "short_answer": short_answer,
         "hint": kwargs.get("hint", False),
         "easy_task": kwargs.get("easy_task", False),
-        "pad_all_answers": kwargs.get("pad_all_answers", True)
+        "pad_all_answers": kwargs.get("pad_all_answers", True),
+        "special_tokens": kwargs.get("special_tokens", SpecialTokens()),
     }
     print("params", params)
     train = FinQADataset(train, **params)

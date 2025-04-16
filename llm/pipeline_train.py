@@ -74,7 +74,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     data_params = params["data"]
 
     # Load tokenizer and model
-    model, tokenizer, TransformerBlock = model_handler(model_params)
+    model, tokenizer, TransformerBlock, special_tokens = model_handler(model_params)
     # model = model.to(rank)
     summary(model)
     # Load data
@@ -83,6 +83,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
         "tokenizer": tokenizer,
         "max_length": model_params["config"]["max_seq_len"],
         # "max_a_length": model_params["config"]["max_a_len"], # TODO: TEMPORARY
+        "special_tokens": special_tokens,
         **data_params
     }
     # start_pos = dataset_params["max_length"] - dataset_params["max_a_length"]
