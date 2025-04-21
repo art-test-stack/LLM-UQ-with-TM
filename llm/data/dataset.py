@@ -230,22 +230,18 @@ def format_table(table, row_separator="\n", field_separator="; "):
 
 def get_answer_formats(answer):
     # answer = answer.replace(" ", "")
-    try: 
-        answer = int(answer)
-        return "an integer"
+    try:
+        answer = float(answer)
+        return "a float"
     except:
-        try:
-            answer = float(answer)
-            return "a float"
-        except:
-            if "%" in answer:
-                return "a percentage"
-            elif answer == "ye" or answer == "yes" or answer == "no":
-                return "'yes' or 'no'"
-            elif "$" in answer:
-                return "a currency"
-            else:
-                return "unknown"
+        if "%" in answer:
+            return "a percentage"
+        elif answer == "ye" or answer == "yes" or answer == "no":
+            return "'yes' or 'no'"
+        elif "$" in answer:
+            return "a currency"
+        else:
+            return "unknown"
 
 
 def make_instruction(answer_type):
