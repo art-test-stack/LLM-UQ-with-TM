@@ -1,12 +1,12 @@
 model:
-  name: "Llama-3dot2-1B"
+  name: "Llama-3.2-1B"
   base_model: "meta-llama/Llama-3.2-1B"
   type: "hgface"
   tokenizer: "meta-llama/Llama-3.2-1B"
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
   config:
-    max_seq_len: 2048
+    max_seq_len: 4096
   lora:
     r: 4
     lora_alpha: 32
@@ -22,8 +22,9 @@ model:
       - "classifier"
   special_tokens:
     pad: "<|reserved_special_token_0|>"
-    begin_of_text: "<|begin_of_text|>"
+    start_of_text: "<|begin_of_text|>"
     end_of_text: "<|end_of_text|>"
+    start_of_answer: "<|reserved_special_token_3|>"
     
 
 training:
@@ -42,7 +43,7 @@ training:
 
 data:
   short_answer: True
-  easy_task: True
+  easy_task: False
   hint: True
   max_a_length: 16
 
