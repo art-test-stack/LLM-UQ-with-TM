@@ -13,6 +13,7 @@ echo "Total of $SLURM_NTASKS cores"
 module avail Python
 module load TensorFlow/2.11.0-foss-2022a-CUDA-11.7.0
 source ${ENV_DIR}
+cd ${TILDROOT}
 # source ${PIP_DIR}
 # Uncomment the following lines to install requirements
 

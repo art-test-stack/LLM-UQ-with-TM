@@ -19,6 +19,7 @@ source ${ENV_DIR}
 # module load Python/3.11.3-GCCcore-12.3.0
 # source ${ENV_DIR}
 source ${PIP_DIR}
+cd ${TILDROOT}
 # Uncomment the following lines to install requirements
 # pip install --upgrade pip 
 pip install -r requirements.txt

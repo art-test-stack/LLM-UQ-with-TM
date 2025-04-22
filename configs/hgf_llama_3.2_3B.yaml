@@ -24,6 +24,7 @@ model:
     pad: "<|reserved_special_token_0|>"
     start_of_text: "<|begin_of_text|>"
     end_of_text: "<|end_of_text|>"
+    start_of_answer: "<|reserved_special_token_3|>"
     
 
 training:

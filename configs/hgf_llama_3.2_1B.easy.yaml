@@ -1,5 +1,5 @@
 model:
-  name: "Llama-3.2-1B"
+  name: "Llama-3.2-1B.easy"
   base_model: "meta-llama/Llama-3.2-1B"
   type: "hgface"
   tokenizer: "meta-llama/Llama-3.2-1B"
@@ -42,9 +42,9 @@ training:
 
 data:
   short_answer: True
-  easy_task: False
+  easy_task: True
   hint: True
-  max_a_length: 16
+  max_a_length: 8
 
 lctm:
   uq_path: "CSV_PATH"

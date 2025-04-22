@@ -123,7 +123,7 @@ def hgface_handler(params):
     special_tokens = SpecialTokens(**special_tokens)
     tokenizer = TokenizerHGFLlama(tokenizer, special_tokens)
     
-    print(tokenizer.vocab)
+    # print(tokenizer.vocab)
     # TODO: Check if it is done correctly
     model.base_model.padding_id = tokenizer.pad_token_id
     model.resize_token_embeddings(tokenizer.max_token_id)
