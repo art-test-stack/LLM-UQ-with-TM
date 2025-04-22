@@ -36,6 +36,3 @@ data:
   easy_task: True
   hint: True
   max_a_length: 2
-
-lctm:
-  uq_path: "CSV_PATH"

@@ -58,4 +58,4 @@ sbatch --job-name="$JOB_NAME.$train_mode.$RUN_TYPE" \
      --mem="$MEM" \
      --output="$OUTPUT_DIR/$JOB_NAME.$train_mode.$RUN_TYPE.txt" \
      --export=ENV_DIR="$ENV_DIR",PARAMS_FILE="$PARAMS_FILE",TRAIN_MODE="$train_mode" \
-     scripts/train_llm.slurm
+     slurm/train_llm.slurm

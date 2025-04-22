@@ -47,5 +47,3 @@ data:
   instruct: True
   max_a_length: 8
 
-lctm:
-  uq_path: "CSV_PATH"

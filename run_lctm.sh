@@ -10,4 +10,4 @@ source .env && sbatch --job-name=$TM_JOB_NAME.$TM_RUN_TYPE \
     --mem=$TM_MEM \
     --output=$OUTPUT_DIR/$TM_JOB_NAME.$TM_RUN_TYPE.txt \
     --export=ENV_DIR=$ENV_DIR \
-    scripts/lctm.slurm
+    slurm/lctm.slurm

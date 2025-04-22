@@ -97,7 +97,7 @@ class Trainer:
             # "f1_val": []
         }
         self.accumulation_steps = kwargs.get("accumulation_steps", 1)
-        warmup_steps = kwargs.get("warmup_steps", 1)
+        warmup_steps = kwargs.get("warmup_steps", 500)
         self.warmup = WarmUp(self.optimizer, warmup_steps=warmup_steps)
         try:
             self.load_last_session()

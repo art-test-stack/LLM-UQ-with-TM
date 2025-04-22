@@ -99,24 +99,24 @@ class FinQADataset(Dataset):
             question += f"\n\nYou are a financial question answering chatbot. {context_desc} You need to reasonnate on the data to answer the question. {instruction}{self.special_tokens.eot_id}{self.special_tokens.start_of_header}"
         if pre_text and not self.easy_task:
             question += f"pre_text{self.special_tokens.end_of_header}"
-            question += f"\n\nPre-text: {pre_text}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"
+            question += f"\n\nPre-text: {pre_text}{self.special_tokens.eot_id}{self.special_tokens.start_of_header}"
         if table and not self.easy_task:
             question += f"table{self.special_tokens.end_of_header}"
-            question += f"\n\nTable: {table}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"
+            question += f"\n\nTable: {table}{self.special_tokens.eot_id}{self.special_tokens.start_of_header}"
         if post_text and not self.easy_task:
             question += f"table{self.special_tokens.end_of_header}"
-            question += f"\n\Post-text: {post_text}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"
+            question += f"\n\Post-text: {post_text}{self.special_tokens.eot_id}{self.special_tokens.start_of_header}"
         hint = clean_text(data['gold_inds'])
         
         if (self.hint and self.short_answer and hint) or self.easy_task:
             question += f"hint{self.special_tokens.end_of_header}"
-            question += f"\n\nHint: {post_text}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"
+            question += f"\n\nHint: {post_text}{self.special_tokens.eot_id}{self.special_tokens.start_of_header}"
         question += f"user{self.special_tokens.end_of_header}"
-        question += f"\n\nQuestion: {_question}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"
+        question += f"\n\nQuestion: {_question}{self.special_tokens.eot_id}{self.special_tokens.start_of_header}"
         question += f"assistant{self.special_tokens.end_of_header}\n\n"
 
         # PREPARE ANSWER
-        answer = f"{self.special_tokens.start_of_answer}{_answer}{self.special_tokens.end_of_text}" 
+        answer = f"{self.special_tokens.start_of_answer}{_answer}{self.special_tokens.eot_id}" 
         # if (not self.short_answer) and (not self.easy_task):
         #     answer += f"{SPECIAL_TOKENS.start_of_program}{program}{SPECIAL_TOKENS.end_of_program}"
         answer += f"{self.special_tokens.end_of_text}"

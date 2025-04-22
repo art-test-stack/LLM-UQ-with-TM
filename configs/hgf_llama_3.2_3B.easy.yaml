@@ -8,7 +8,7 @@ model:
   config:
     max_seq_len: 4096
   lora:
-    r: 4
+    r: 8
     lora_alpha: 32
     target_modules:
       - "q_proj"
@@ -44,7 +44,5 @@ data:
   short_answer: True
   easy_task: True
   hint: True
+  instruct: True
   max_a_length: 8
-
-lctm:
-  uq_path: "CSV_PATH"
