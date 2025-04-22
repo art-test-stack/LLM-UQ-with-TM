@@ -57,7 +57,8 @@ class FinQADataset(Dataset):
 
     def __getitem__(self, idx: int):
         mask = self.make_mask(idx)
-        res = { key: torch.tensor(val[idx]) for key, val in self.encodings.items() if not key == "len_q" }
+        # res = { key: torch.tensor(val[idx]) for key, val in self.encodings.items() if not key == "len_q" }
+        res = { key: torch.tensor(val[idx]) for key, val in self.encodings.items() }
         res["mask"] = mask
         return res
     
