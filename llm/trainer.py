@@ -145,6 +145,7 @@ class Trainer:
         
         compute_train_loss, compute_val_loss = self._get_train_val_loops()
         print("Training type: ", self.training_type)
+        print("Model type:", self.model_type)
 
         get_cuda_allocation(verbose=True)
         print("Start training")
@@ -299,13 +300,13 @@ class Trainer:
             del mask
             loss = self.loss_fn(output.reshape(-1, vocab_size), labels.reshape(-1))
             loss = loss
-                
             loss.backward()
 
             if self.eval_train:
                 self.eval_train.update(refs=labels, preds=output)
                 if i % 10 == 0:
-                    self.eval_val.compute()
+                    # self.eval_val.compute()
+                    self.eval_train.compute()
 
             ddp_loss[0] += loss.item()
             ddp_loss[1] += labels.numel()
@@ -318,7 +319,6 @@ class Trainer:
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()
-            break
             
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)

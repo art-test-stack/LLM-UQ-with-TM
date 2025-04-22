@@ -125,7 +125,7 @@ def hgface_handler(params):
     
     # print(tokenizer.vocab)
     # TODO: Check if it is done correctly
-    model.base_model.padding_id = tokenizer.pad_token_id
+    # model.base_model.padding_id = tokenizer.pad_token_id
     model.resize_token_embeddings(tokenizer.max_token_id)
     
     lora_config = LoraConfig(

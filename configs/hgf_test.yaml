@@ -6,7 +6,7 @@ model:
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
   config:
-    max_seq_len: 4
+    max_seq_len: 12
   lora:
     r: 4
     lora_alpha: 32
@@ -24,13 +24,14 @@ model:
     pad: "<|reserved_special_token_0|>"
     start_of_text: "<|begin_of_text|>"
     end_of_text: "<|end_of_text|>"
+    start_of_answer: "<|reserved_special_token_3|>"
     
 
 training:
   batch_size: 1
   test_batch_size: 16
   epochs: 2
-  learning_rate: 5e-5
+  learning_rate: 5e-2
   step_size: 20
   gamma: 0.7
   patience: 3000
@@ -44,4 +45,4 @@ data:
   short_answer: True
   easy_task: True
   hint: True
-  max_a_length: 2
+  max_a_length: 8

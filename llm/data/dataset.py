@@ -119,7 +119,8 @@ class FinQADataset(Dataset):
         answer = f"{self.special_tokens.start_of_answer}{_answer}{self.special_tokens.eot_id}" 
         # if (not self.short_answer) and (not self.easy_task):
         #     answer += f"{SPECIAL_TOKENS.start_of_program}{program}{SPECIAL_TOKENS.end_of_program}"
-        answer += f"{self.special_tokens.end_of_text}"
+        
+        # answer += f"{self.special_tokens.end_of_text}"
 
         return question, answer
 
@@ -182,6 +183,7 @@ class FinQADataset(Dataset):
         labels = self.tokenizer(answer, padding=False, return_tensors=True)
 
         len_q = min(self.max_q_len, len(input_ids))
+        len_a = min(self.max_a_len, len(labels))
 
         if self.pad_all_answers:
             start_pos = self.max_q_len
@@ -197,7 +199,14 @@ class FinQADataset(Dataset):
         # return input_ids, labels, mask, start_pos, end_positions
         input_ids = input_ids.numpy()
         labels = labels.numpy()
-        return { "input_ids": input_ids, "labels": labels, "start_positions": start_pos, "end_positions": end_positions, "len_q": len_q}
+        return { 
+            "input_ids": input_ids, 
+            "labels": labels, 
+            "start_positions": start_pos, 
+            "end_positions": end_positions, 
+            "len_q": len_q, 
+            "len_a": len_a
+        }
 
 
 def clean_text(corpus: List[str]) -> str:

@@ -143,7 +143,7 @@ class Evaluate:
     
     def results(self, results = {}):
         if self.running_res:
-            return { m: sum(v) / len(v) if len(v) > 1 else None for m, v in self.running_res.items() }
+            return { m: sum(v) / len(v) if len(v) >= 1 else None for m, v in self.running_res.items() }
         return results
 
     def __call__(self, refs, preds, tokenized = True):
@@ -239,7 +239,7 @@ class Accuracy(BaseMetric):
     """
     def __init__(self, padding_id = 0, endtext_id = 0, rank = 0):
         super().__init__(padding_id, endtext_id, rank)
-    
+
     @torch.inference_mode()
     def compute(
             self, 
@@ -261,7 +261,6 @@ class Accuracy(BaseMetric):
         predictions = predictions.to(device=self.rank)
         references, predictions = self.apply_mask(references, predictions)
         acc = (predictions == references).to(dtype = torch.float32).mean()
-
         return acc.item()
 
 class Recall(BaseMetric):

@@ -6,7 +6,7 @@ model:
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
   config:
-    max_seq_len: 4096
+    max_seq_len: 512
   lora:
     r: 8
     lora_alpha: 32
