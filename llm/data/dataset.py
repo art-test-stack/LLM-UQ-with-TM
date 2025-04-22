@@ -47,20 +47,21 @@ class FinQADataset(Dataset):
         self.easy_task = easy_task
 
         data = list(map(self.read_data, data))
-        encodings = list(map(self.prepare_data, data))
+        self.encodings = list(map(self.prepare_data, data))
         
-        self.encodings = { key: [val[i] for val in encodings] for i, key in enumerate(["input_ids", "labels", "start_positions", "end_positions", "len_q"]) }
+        # self.encodings = [{ key: val[i] for i, key in enumerate(["input_ids", "labels", "start_positions", "end_positions", "len_q"])  } for val in encodings]
         # self.encodings = { key: [val[i] for val in encodings] for i, key in enumerate(["input_ids", "labels", "mask", "start_positions", "end_positions"]) }
 
     def __len__(self):  
-        return len(self.encodings["input_ids"])
+        return len(self.encodings)
 
     def __getitem__(self, idx: int):
         mask = self.make_mask(idx)
         # res = { key: torch.tensor(val[idx]) for key, val in self.encodings.items() if not key == "len_q" }
-        res = { key: torch.tensor(val[idx]) for key, val in self.encodings.items() }
+        # res = { key: torch.tensor(val[idx]) for key, val in self.encodings.items() }
+        res = self.encodings[idx]
         res["mask"] = mask
-        return res
+        return { k: torch.tensor(v) for k, v in res.items() }
     
     def make_qa_pair(self, data):
         # CLEAN TEXT CONTEXT
@@ -153,9 +154,9 @@ class FinQADataset(Dataset):
         return mask.astype(np.bool)
     
     def make_mask(self, idx: int):
-        len_q = self.encodings["len_q"][idx]
-        start_pos = self.encodings["start_positions"][idx]
-        end_pos = self.encodings["end_positions"][idx]
+        len_q = self.encodings[idx]["len_q"]
+        start_pos = self.encodings[idx]["start_positions"]
+        end_pos = self.encodings[idx]["end_positions"]
 
         attention_mask = np.triu(np.ones((self.max_length, self.max_length), dtype=np.int64), k=end_pos - self.max_length + 1)
         attention_mask[:,0] = 0
@@ -196,7 +197,7 @@ class FinQADataset(Dataset):
         # return input_ids, labels, mask, start_pos, end_positions
         input_ids = input_ids.numpy()
         labels = labels.numpy()
-        return input_ids, labels, start_pos, end_positions, len_q
+        return { "input_ids": input_ids, "labels": labels, "start_positions": start_pos, "end_positions": end_positions, "len_q": len_q}
 
 
 def clean_text(corpus: List[str]) -> str:
