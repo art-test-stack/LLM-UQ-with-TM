@@ -6,7 +6,7 @@ model:
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
   config:
-    max_seq_len: 8
+    max_seq_len: 4
   lora:
     r: 4
     lora_alpha: 32
@@ -29,7 +29,7 @@ model:
 training:
   batch_size: 1
   test_batch_size: 16
-  epochs: 1
+  epochs: 2
   learning_rate: 5e-5
   step_size: 20
   gamma: 0.7
@@ -44,7 +44,7 @@ data:
   short_answer: True
   easy_task: True
   hint: True
-  max_a_length: 3
+  max_a_length: 2
 
 lctm:
   uq_path: "CSV_PATH"

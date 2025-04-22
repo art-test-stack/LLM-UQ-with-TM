@@ -77,12 +77,24 @@ class FinQADataset(Dataset):
         answer_type = get_answer_formats(_answer)
         instruction = make_instruction(answer_type)
         
+        if not self.easy_task:
+            context_desc = f"A pre-text, a table"
+            
+            if self.hint and not self.short_answer:
+                context_desc += f", a post-text and a hint are given to you."
+            else:
+                context_desc += f" and a post-text are given to you."
+        
+        if self.easy_task:
+            context_desc = "A hint is given to you."
+
         # WRAP QUESTION
+        
         question = f"{self.special_tokens.start_of_text}{self.special_tokens.start_of_header}"
         if self.instruct:
             question += f"system{self.special_tokens.end_of_header}"
             question += f"\n\nCutting Knowledge Date: December 2023\nToday Date: {datetime.now().strftime('%d %b %Y')}"
-            question += f"\n\nYou are a financial question answering chatbot. {'inputs'} are given to you. You need to reasonnate on the data to answer the question. {instruction}{self.special_tokens.eot_id}{self.special_tokens.start_of_header}"
+            question += f"\n\nYou are a financial question answering chatbot. {context_desc} You need to reasonnate on the data to answer the question. {instruction}{self.special_tokens.eot_id}{self.special_tokens.start_of_header}"
         if pre_text and not self.easy_task:
             question += f"pre_text{self.special_tokens.end_of_header}"
             question += f"\n\nPre-text: {pre_text}{self.special_tokens.end_of_text}{self.special_tokens.start_of_header}"

@@ -1,6 +1,6 @@
-from tm_data.fetch_data import InputCSV
+from tm_data.fetch_data import TrainingDataFetcher
 from llm.handlers.handler import ModelType
-from llm.utils import EarlyStopping, TrainingType, get_model_dir
+from llm.utils import EarlyStopping, TrainingType, WarmUp, get_model_dir
 from utils import get_cuda_allocation, get_device
 
 
@@ -34,7 +34,7 @@ class Trainer:
         loss_fn: nn.Module, loss function
         rank: torch.device, rank of the process
         world_size: int, world size
-        csv_object: InputCSV, object for saving training metrics
+        csv_object: TrainingDataFetcher, object for saving training metrics
         lr_scheduler: torch.optim.lr_scheduler, learning rate scheduler
         model_type: str, type of model
         no_cuda: bool, no cuda
@@ -53,7 +53,7 @@ class Trainer:
             loss_fn: nn.Module,
             rank: torch.device,
             world_size: int,
-            csv_object: InputCSV = None,
+            csv_object: TrainingDataFetcher = None,
             lr_scheduler: optim.lr_scheduler = None,
             **kwargs
         ) -> None:
@@ -96,6 +96,9 @@ class Trainer:
             # "f1_train": [],
             # "f1_val": []
         }
+        self.accumulation_steps = kwargs.get("accumulation_steps", 1)
+        warmup_steps = kwargs.get("warmup_steps", 1)
+        self.warmup = WarmUp(self.optimizer, warmup_steps=warmup_steps)
         try:
             self.load_last_session()
             print("Previous session loaded!")
@@ -149,12 +152,13 @@ class Trainer:
         with tqdm(range(epochs), unit="epoch", disable=disable) as tepoch:
             for epoch in tepoch:
                 if self.csv_object:
-                    self.csv_object.update_hyperparameters(epoch, batch_size)
+                    self.csv_object.update_hyperparameters(epoch, batch_size, self.warmup.mean_lr)
 
                 if not self.no_cuda:
                     torch.cuda.empty_cache()
                 if "sampler" in train_kwargs.keys():
                     train_kwargs["sampler"].set_epoch(epoch)
+
 
                 t1 = time.time()
                 train_loss = compute_train_loss(train_loader)

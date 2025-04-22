@@ -6,7 +6,7 @@ from llm.trainer import Trainer
 from llm.eval import Evaluate
 from llm.module import summary
 
-from tm_data.fetch_data import InputCSV
+from tm_data.fetch_data import TrainingDataFetcher
 
 from utils import get_device, get_cuda_allocation
 
@@ -187,7 +187,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     csv_path = model_dir / "fetched_training_data"
     print("CSV path:", csv_path)
 
-    csv_object = InputCSV(
+    csv_object = TrainingDataFetcher(
         model=model, 
         path=csv_path,
         world_size=world_size,

@@ -59,3 +59,25 @@ def get_model_dir(model_name: Union[str, Path], model_dir: Optional[str] = None,
         model_dir.mkdir(parents=True, exist_ok=True)
 
     return model_dir
+
+class WarmUp:
+    def __init__(self, optimizer, warmup_steps: int = 1000):
+        self.optimizer = optimizer
+        self.warmup_steps = warmup_steps
+        self.current_step = 1
+        self.mean_lr = 0
+        self.step()
+
+    def step(self):
+        mean_lr = 0
+        if self.current_step < self.warmup_steps:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = (self.current_step / self.warmup_steps) * param_group['initial_lr']
+                mean_lr += param_group['lr']
+        else:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = param_group['initial_lr']
+                mean_lr += param_group['lr']
+        
+        self.mean_lr = mean_lr / len(self.optimizer.param_groups)
+        self.current_step += 1

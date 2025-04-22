@@ -1,4 +1,4 @@
-from tm_data.features import get_tensor_stats, compute_beta_dist_params, get_grad_spectrums, compute_cosine_similarity
+from tm_data.features import get_tensor_stats, compute_beta_dist_params, get_grad_spectrums, compute_cosine_similarity, compute_grad_dir
 
 import pandas as pd
 import numpy as np
@@ -16,6 +16,10 @@ class GradStats:
     grad_std: float | None = None
     grad_max: float | None = None
     grad_min: float | None = None
+    grad_dir: float | None = None
+    grad_cos_dist: float | None = None
+    grad_noise_scale: float | None = None
+
 
 @dataclass
 class InputData(GradStats):
@@ -26,9 +30,10 @@ class InputData(GradStats):
     # confidence_score: float | None = None
     epoch: int | None = None
     batch_size: int | None = None
+    mean_lr: float | None = None
 
 
-class InputCSV:
+class TrainingDataFetcher:
     def __init__(
             self, 
             model: nn.Module, 
@@ -49,6 +54,7 @@ class InputCSV:
             ] + [ f"{metric}_val" if metric in train_metrics else metric for metric in val_metrics ]
         self.train_metrics = train_metrics
         self.val_metrics = val_metrics
+        self.current_grads = None
         self.init_data()
         self.world_size = world_size
         self.last_layers = None
@@ -92,10 +98,11 @@ class InputCSV:
         self.update_csv()
         self.init_data(last_values)
     
-    def update_hyperparameters(self, epoch: int, batch_size: int) -> None:
+    def update_hyperparameters(self, epoch: int, batch_size: int, mean_lr: float) -> None:
         #TODO fine a new name
         self.current.epoch = epoch
         self.current.batch_size = batch_size
+        self.current.mean_lr = mean_lr
 
     def update_model(self) -> None:
         # PB 1: can't do torch(grads) or np.array(grads) because of the different shapes for each layer
@@ -115,9 +122,11 @@ class InputCSV:
     def compute_grad_stats(self) -> None:
         grads = self.current_grads[0].view(-1) if len(self.current_grads) == 1 else get_concat_tensor(self.current_grads)
 
-        grad_mean, grad_median, grad_std, grad_max, grad_min = get_tensor_stats(grads)
+        # grad_mean, grad_median, grad_std, grad_max, grad_min, grad_noise_scale = get_tensor_stats(grads)
         grad_stats = GradStats(
-            grad_mean, grad_median, grad_std, grad_max, grad_min,
+            grad_dir=compute_grad_dir(grads=grads, last_grads=self.last_iter_grads), 
+            grad_cos_dist=compute_cosine_similarity(grads1=grads, grads2=self.last_iter_grads), 
+            **get_tensor_stats(grads)
         )
         self.current_grad_stats.append(grad_stats)
 
@@ -142,12 +151,15 @@ class InputCSV:
     
     def clean_grads(self) -> None:
         self.current_grad_stats = []
+        self.last_iter_grads = self.current_grads
         self.current_grads = None
 
     def create_csv(self, path: str) -> None:
         with open(path, 'w') as f:
             f.write(f'{",".join(self.CurrentInput.__dataclass_fields__.keys())}\n')
+    
         
+
 def get_concat_tensor(tensor: torch.Tensor) -> torch.Tensor:
     all_tensors = torch.cat([t.view(-1) for t in tensor])
     return all_tensors
