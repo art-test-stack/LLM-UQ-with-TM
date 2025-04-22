@@ -187,7 +187,7 @@ class Trainer:
                 if self.rank == 0 or get_device().type == "mps":
                     losses = {
                         "train": train_loss,
-                        "test": val_loss
+                        "val": val_loss
                     }
                     if self.csv_object:
                         self.csv_object(
@@ -318,6 +318,7 @@ class Trainer:
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()
+            break
             
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)

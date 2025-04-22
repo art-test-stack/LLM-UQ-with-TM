@@ -8,6 +8,7 @@ from torch import nn
 from typing import Callable, Dict, List, Union
 from dataclasses import dataclass, fields, make_dataclass, field
 from pathlib import Path
+from copy import deepcopy
 
 @dataclass
 class GradStats:
@@ -23,14 +24,14 @@ class GradStats:
 
 @dataclass
 class InputData(GradStats):
-    test_loss: float | None = None
-    var_test_loss: float | None = None
+    val_loss: float | None = None
+    var_val_loss: float | None = None
     train_loss: float | None = None
     var_train_loss: float | None = None
+    mean_lr: float | None = None
     # confidence_score: float | None = None
     epoch: int | None = None
     batch_size: int | None = None
-    mean_lr: float | None = None
 
 
 class TrainingDataFetcher:
@@ -65,7 +66,7 @@ class TrainingDataFetcher:
 
     def init_data(self, last_values: Union[Dict[str,float], None] = None) -> None:
         self.clean_grads()
-        self.last_test_loss = last_values["test_loss"] if last_values else None
+        self.last_val_loss = last_values["val_loss"] if last_values else None
         self.last_train_loss = last_values["train_loss"] if last_values else None
         self.CurrentInput = make_dataclass(
             "CurrentInput",
@@ -78,8 +79,8 @@ class TrainingDataFetcher:
         assert self.current.batch_size, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
         assert self.current.epoch or self.current.epoch == 0, "You must update the hyperparameters before updating the model. Call 'update_hyperparameters' first."
 
-        self.current.test_loss = losses["test"]
-        self.current.var_test_loss = losses["test"] - self.last_test_loss if self.last_test_loss else losses["test"]
+        self.current.val_loss = losses["val"]
+        self.current.var_val_loss = losses["val"] - self.last_val_loss if self.last_val_loss else losses["val"]
         self.current.train_loss = losses["train"]
         self.current.var_train_loss = losses["train"] - self.last_train_loss if self.last_train_loss else losses["train"]
         metrics = {
@@ -89,7 +90,7 @@ class TrainingDataFetcher:
         for metric in self.eval_metrics:
             setattr(self.current, metric, metrics[metric])
         last_values = {
-            "test_loss": losses["test"],
+            "val_loss": losses["val"],
             "train_loss": losses["train"]
         }
         self.compute_grad_stats()
@@ -121,7 +122,7 @@ class TrainingDataFetcher:
     @torch.inference_mode()
     def compute_grad_stats(self) -> None:
         grads = self.current_grads[0].view(-1) if len(self.current_grads) == 1 else get_concat_tensor(self.current_grads)
-
+        self.current_grads = torch.clone(grads)
         # grad_mean, grad_median, grad_std, grad_max, grad_min, grad_noise_scale = get_tensor_stats(grads)
         grad_stats = GradStats(
             grad_dir=compute_grad_dir(grads=grads, last_grads=self.last_iter_grads), 

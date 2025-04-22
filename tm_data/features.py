@@ -47,12 +47,14 @@ def compute_cosine_similarity(grads1: torch.Tensor, grads2: torch.Tensor) -> Uni
                 cos_dist = torch.matmul(layer_1, layer_2)
                 cos_dist /= torch.norm(layer_1) * torch.norm(layer_2)
                 cosine_dist.append(cos_dist)
+            cosine_dist = torch.stack(cosine_dist)
         else:
             cos_dist = torch.matmul(grads1, grads2)
             cos_dist /= torch.norm(grads1) * torch.norm(grads2)
             cosine_dist = cos_dist
+        cosine_dist = torch.mean(cosine_dist).item()
     else:
-        print("One of the gradients is None")
+        print("WARNING cosine similarity: One of the gradients is None. Returning 0.")
         return 0.
     return cosine_dist
 

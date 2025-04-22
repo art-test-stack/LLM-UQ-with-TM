@@ -6,7 +6,7 @@ model:
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
   config:
-    max_seq_len: 4096
+    max_seq_len: 12_000
   lora:
     r: 4
     lora_alpha: 32
@@ -44,7 +44,8 @@ data:
   short_answer: True
   easy_task: False
   hint: True
-  max_a_length: 16
+  instruct: True
+  max_a_length: 8
 
 lctm:
   uq_path: "CSV_PATH"
