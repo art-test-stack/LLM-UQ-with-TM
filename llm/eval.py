@@ -81,6 +81,9 @@ class Evaluate:
 
         self._perplexity = Perplexity(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
         self.metrics["perplexity"] = SampleType.TENSOR
+
+        # self._entropy = Entropy(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
+        # self.metrics["entropy"] = SampleType.TENSOR
     
     @torch.inference_mode()
     def update(self, refs: torch.Tensor, preds: torch.Tensor):
@@ -468,3 +471,39 @@ class Perplexity(BaseMetric):
         
         perplexity = torch.exp(-target_log_probs.mean(dim=-1))  
         return perplexity.mean().item()
+
+
+class Entropy(BaseMetric):
+    def __init__(self, padding_id = 0, endtext_id = 0, rank = 0):
+        super().__init__(padding_id, endtext_id, rank)
+
+    @torch.inference_mode()
+    def compute(
+        self,
+        references: torch.Tensor,
+        predictions: torch.Tensor,
+        ) -> torch.Tensor:
+        """
+        Calculate entropy from logits and target labels, ignoring padding tokens.
+
+        Args:
+            logits (torch.Tensor): Logits output from the model (batch_size, seq_length, vocab_size).
+            target (torch.Tensor): Ground truth labels (batch_size, seq_length).
+            pad_token_id (int): ID of the padding token to ignore.
+
+        Returns:
+            entropy (float): The entropy score.
+        """
+        log_probs = torch.nn.functional.log_softmax(predictions, dim=-1)
+        probs = torch.nn.functional.softmax(predictions, dim=-1)
+
+        target_log_probs = log_probs.gather(dim=-1, index=references.unsqueeze(-1)).squeeze(-1)
+        target_probs = probs.gather(dim=-1, index=references.unsqueeze(-1)).squeeze(-1)
+        # mask = references == self.padding_id
+        mask = self.get_mask(references)
+        target_log_probs[~mask] = 0
+        target_probs[~mask] = 0
+        
+        entropy = -target_log_probs * target_probs
+        
+        return entropy.mean().item()
