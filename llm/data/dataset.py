@@ -61,7 +61,7 @@ class FinQADataset(Dataset):
         # res = { key: torch.tensor(val[idx]) for key, val in self.encodings.items() }
         res = self.encodings[idx]
         res["mask"] = mask
-        return { k: torch.tensor(v) for k, v in res.items() }
+        return res
     
     def make_qa_pair(self, data):
         # CLEAN TEXT CONTEXT
@@ -202,10 +202,10 @@ class FinQADataset(Dataset):
         return { 
             "input_ids": input_ids, 
             "labels": labels, 
-            "start_positions": start_pos, 
-            "end_positions": end_positions, 
-            "len_q": len_q, 
-            "len_a": len_a
+            "start_positions": torch.tensor(start_pos), 
+            "end_positions": torch.tensor(end_positions), 
+            "len_q": torch.tensor(len_q), 
+            "len_a": torch.tensor(len_a)
         }
 
 

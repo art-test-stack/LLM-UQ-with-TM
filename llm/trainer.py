@@ -93,17 +93,19 @@ class Trainer:
             "confidence_val": [],
             "accuracy_train": [], 
             "accuracy_val": [],
+            "curr_epoch": 0,
             # "f1_train": [],
             # "f1_val": []
         }
         self.accumulation_steps = kwargs.get("accumulation_steps", 1)
         warmup_steps = kwargs.get("warmup_steps", 500)
-        self.warmup = WarmUp(self.optimizer, warmup_steps=warmup_steps)
         try:
             self.load_last_session()
             print("Previous session loaded!")
         except:
             print("No previous session found!")
+        
+        self.warmup = WarmUp(self.optimizer, warmup_steps=warmup_steps, current_step=self.history["curr_epoch"])
 
     def load_last_session(self):
         with open(self.model_dir / "history.pickle", 'rb') as handle:
@@ -150,11 +152,13 @@ class Trainer:
         get_cuda_allocation(verbose=True)
         print("Start training")
         disable = (not verbose) or not (self.rank==0 or get_device().type == "mps")
-        with tqdm(range(epochs), unit="epoch", disable=disable) as tepoch:
+        epoch_i = self.history["curr_epoch"]
+        with tqdm(range(epoch_i, epochs), unit="epoch", disable=disable) as tepoch:
             for epoch in tepoch:
+                self.warmup.step()
                 if self.csv_object:
-                    self.csv_object.update_hyperparameters(epoch, batch_size, self.warmup.mean_lr)
-
+                    self.csv_object.update_hyperparameters(self.history["curr_epoch"], batch_size, self.warmup.mean_lr)
+                
                 if not self.no_cuda:
                     torch.cuda.empty_cache()
                 if "sampler" in train_kwargs.keys():
@@ -182,7 +186,8 @@ class Trainer:
 
                 self.history["confidence_train"].append(eval_train["confidence"])
                 self.history["confidence_val"].append(eval_val["confidence"])
-
+                self.history["curr_epoch"] += 1
+                
                 self.lr_scheduler.step()
 
                 if self.rank == 0 or get_device().type == "mps":

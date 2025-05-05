@@ -17,7 +17,7 @@ cd ${TILDROOT}
 # source ${PIP_DIR}
 # Uncomment the following lines to install requirements
 
-# pip install --upgrade pip 
+pip install --upgrade pip 
 pip install -r requirements.txt
 pip install pyTsetlinMachine
 python -c "import torch; print(torch.__version__, torch.version.cuda)"
