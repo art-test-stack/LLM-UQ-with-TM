@@ -79,6 +79,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     summary(model)
     # Load data
     # TODO: add to settings
+    print("data_params", data_params)
     dataset_params = {
         "tokenizer": tokenizer,
         "max_length": model_params["config"]["max_seq_len"],

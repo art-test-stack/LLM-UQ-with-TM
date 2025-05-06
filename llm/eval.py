@@ -82,8 +82,8 @@ class Evaluate:
         self._perplexity = Perplexity(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
         self.metrics["perplexity"] = SampleType.TENSOR
 
-        # self._entropy = Entropy(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
-        # self.metrics["entropy"] = SampleType.TENSOR
+        # self._swnll = SelfWeightedNegLL(padding_id=self.padding_id, endtext_id=self.endtext_id, rank=self.rank)
+        # self.metrics["self_weigh_nll"] = SampleType.TENSOR
     
     @torch.inference_mode()
     def update(self, refs: torch.Tensor, preds: torch.Tensor):
@@ -494,16 +494,10 @@ class Entropy(BaseMetric):
         Returns:
             entropy (float): The entropy score.
         """
-        log_probs = torch.nn.functional.log_softmax(predictions, dim=-1)
-        probs = torch.nn.functional.softmax(predictions, dim=-1)
-
-        target_log_probs = log_probs.gather(dim=-1, index=references.unsqueeze(-1)).squeeze(-1)
-        target_probs = probs.gather(dim=-1, index=references.unsqueeze(-1)).squeeze(-1)
-        # mask = references == self.padding_id
         mask = self.get_mask(references)
-        target_log_probs[~mask] = 0
-        target_probs[~mask] = 0
-        
-        entropy = -target_log_probs * target_probs
+        log_probs = torch.nn.functional.log_softmax(predictions[mask], dim=-1)
+        probs = torch.nn.functional.softmax(predictions[mask], dim=-1)
+
+        entropy = -(log_probs * probs).sum(dim=-1)
         
         return entropy.mean().item()

@@ -28,7 +28,7 @@ model:
     
 
 training:
-  batch_size: 1
+  batch_size: 2
   test_batch_size: 16
   epochs: 2
   learning_rate: 5e-2
@@ -46,3 +46,4 @@ data:
   easy_task: True
   hint: True
   max_a_length: 8
+  teacher_forcing: False
