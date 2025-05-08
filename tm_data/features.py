@@ -15,11 +15,12 @@ def get_tensor_stats(tensor: Union[torch.Tensor, list[torch.Tensor]]) -> Tuple[f
         tensor = torch.Tensor(tensor)
 
     mean = torch.mean(tensor).item()
+    abs_mean = torch.mean(torch.abs(tensor)).item()
     median = torch.median(tensor).item()
     std = torch.std(tensor).item()
     max = torch.max(tensor).item()
     min = torch.min(tensor).item()
-    return { "grad_mean": mean, "grad_median": median, "grad_std": std, "grad_max": max, "grad_min": min, "grad_noise_scale": std / mean**2 }
+    return { "grad_abs_mean": abs_mean, "grad_mean": mean, "grad_median": median, "grad_std": std, "grad_max": max, "grad_min": min, "grad_noise_scale": std / mean**2 }
     # return mean, median, std, max, min, std / mean**2
 
 def compute_beta_dist_params(mean, std):

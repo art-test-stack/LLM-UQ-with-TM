@@ -102,8 +102,9 @@ class Trainer:
         try:
             self.load_last_session()
             print("Previous session loaded!")
-        except:
+        except NameError:
             print("No previous session found!")
+            print(NameError)
         
         self.warmup = WarmUp(self.optimizer, warmup_steps=warmup_steps, current_step=self.history["curr_epoch"])
 
@@ -111,6 +112,14 @@ class Trainer:
         with open(self.model_dir / "history.pickle", 'rb') as handle:
             self.history = pickle.load(handle)
         self.load_model()
+    
+    def save_session(self):
+        with open(self.model_dir / "history.pickle", 'wb') as handle:
+            pickle.dump(self.history, handle, protocol=pickle.HIGHEST_PROTOCOL)    
+        if self.world_size > 1:
+            self.save_modelcheckpoint()
+        else:
+            self.save_model()
 
     def fit(
             self, 
@@ -229,14 +238,8 @@ class Trainer:
                     print(f"Early stopping at epoch {epoch}, patience is {early_stopping.patience}") if self.rank == 0 else None
                     break
                 
-                if epoch % 20 == 0:    
-                    if self.world_size > 1:
-                        self.save_modelcheckpoint()
-                    else:
-                        self.save_model()
-                        
-                    with open(self.model_dir / "history.pickle", 'wb') as handle:
-                        pickle.dump(self.history, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                if epoch % 20 == 0:
+                    self.save_session()
 
 
     def _get_train_val_loops(self):
