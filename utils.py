@@ -27,3 +27,15 @@ def get_cuda_allocation(verbose=False):
         return r-a
     else:
         print("No cuda device")
+
+from llm.utils import get_model_dir
+from pathlib import Path
+
+def get_model_training_fetched_data_csv(model_name: str, training_type: str = "batch") -> Path:
+    model_dir = get_model_dir(model_name=model_name, training_type=training_type)
+    fetched_data_csv = model_dir.joinpath("fetched_training_data.csv")
+
+    assert fetched_data_csv.exists(), f"Fetched data file {fetched_data_csv} does not exist. Please run the training first."
+    
+    return fetched_data_csv, model_dir
+
