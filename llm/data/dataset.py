@@ -117,12 +117,14 @@ class FinQADataset(Dataset):
 
         # PREPARE ANSWER
         answer = f"{self.special_tokens.start_of_answer}{_answer}{self.special_tokens.eot_id}" 
+
+        return question, answer
+    
+
         # if (not self.short_answer) and (not self.easy_task):
         #     answer += f"{SPECIAL_TOKENS.start_of_program}{program}{SPECIAL_TOKENS.end_of_program}"
         
         # answer += f"{self.special_tokens.end_of_text}"
-
-        return question, answer
 
     def make_answer(self, data):
         # PREPARE ANSWER

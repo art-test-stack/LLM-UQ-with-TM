@@ -32,7 +32,7 @@ class EarlyStopping:
                 self.early_stop = True
 
 
-def get_model_dir(model_name: Union[str, Path], model_dir: Optional[str] = None, training_type: Optional[str] = None) -> Path:
+def get_model_dir(model_name: Union[str, Path], model_dir: Optional[str] = None, training_type: Optional[str] = "batch") -> Path:
     """
     Get the model directory for a given model name.
 

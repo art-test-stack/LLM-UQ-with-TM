@@ -55,7 +55,7 @@ def pipeline_lctm(args: Namespace):
 
     results = []
     sil_scores = []
-    runs = 1
+    runs = 10
     while runs != 0:
         for num_clauses in num_clauses_l:
             for T in T_l:

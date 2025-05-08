@@ -12,6 +12,7 @@ from copy import deepcopy
 
 @dataclass
 class GradStats:
+    grad_abs_mean: float | None = None
     grad_mean: float | None = None
     grad_median: float | None = None
     grad_std: float | None = None
