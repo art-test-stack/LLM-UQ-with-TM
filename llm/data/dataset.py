@@ -28,14 +28,14 @@ class FinQADataset(Dataset):
             short_answer: bool = True,
             hint: bool = False,
             easy_task: bool = False,
-            pad_all_answers: bool = False,
+            teacher_forcing: bool = False,
             **kwargs: Dict[str, Any]
         ) -> None:
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.max_q_len = max_length - max_a_length
         self.max_a_len = max_a_length
-        self.pad_all_answers = pad_all_answers
+        self.teacher_forcing = teacher_forcing
         self.special_tokens: SpecialTokens = kwargs.get("special_tokens", SpecialTokens())
         self.instruct = kwargs.get("instruct", False)
         
@@ -49,6 +49,15 @@ class FinQADataset(Dataset):
         data = list(map(self.read_data, data))
         self.encodings = list(map(self.prepare_data, data))
         
+        if not self.teacher_forcing:
+            encodings = []
+            keys = list(self.encodings[0].keys())
+            for encoding in self.encodings:
+                encodings.extend([{ key: encoding[key][i] if not key in ["start_positions", "end_positions"] else self.max_length -1 for key in keys } for i in range(len(encoding["input_ids"]))])
+            
+            self.encodings = encodings
+
+        print("len(self.encodings)", len(self.encodings))
         # self.encodings = [{ key: val[i] for i, key in enumerate(["input_ids", "labels", "start_positions", "end_positions", "len_q"])  } for val in encodings]
         # self.encodings = { key: [val[i] for val in encodings] for i, key in enumerate(["input_ids", "labels", "mask", "start_positions", "end_positions"]) }
 
@@ -61,6 +70,7 @@ class FinQADataset(Dataset):
         # res = { key: torch.tensor(val[idx]) for key, val in self.encodings.items() }
         res = self.encodings[idx]
         res["mask"] = mask
+        
         return res
     
     def make_qa_pair(self, data):
@@ -161,12 +171,17 @@ class FinQADataset(Dataset):
         start_pos = self.encodings[idx]["start_positions"]
         end_pos = self.encodings[idx]["end_positions"]
 
-        attention_mask = np.triu(np.ones((self.max_length, self.max_length), dtype=np.int64), k=end_pos - self.max_length + 1)
-        attention_mask[:,0] = 0
-        attention_mask[:,len_q:start_pos] = 1
-        attention_mask[:,end_pos:] = 1
+        if self.teacher_forcing:
+            attention_mask = np.triu(np.ones((self.max_length, self.max_length), dtype=np.int64), k=end_pos - self.max_length + 1)
+            attention_mask[:,0] = 0
+            attention_mask[:,len_q:start_pos] = 1
+            attention_mask[:,end_pos:] = 1
 
-        return attention_mask.astype(bool)
+            return attention_mask.astype(bool)
+
+        else: 
+            attention_mask = self.encodings[idx]["input_ids"] == self.tokenizer.pad_token_id
+            return attention_mask.astype(bool)
 
     def read_data(self, data):
         # GET QUESTION AND ANSWER
@@ -184,10 +199,10 @@ class FinQADataset(Dataset):
         input_ids = self.tokenizer(question, padding=False, return_tensors=True)
         labels = self.tokenizer(answer, padding=False, return_tensors=True)
 
-        len_q = min(self.max_q_len, len(input_ids))
-        len_a = min(self.max_a_len, len(labels))
+        if self.teacher_forcing:
+            len_q = min(self.max_q_len, len(input_ids))
+            len_a = min(self.max_a_len, len(labels))
 
-        if self.pad_all_answers:
             start_pos = self.max_q_len
             end_positions = min(len(labels), self.max_a_len) + start_pos
             input_ids = pad_sequence(input_ids, self.max_q_len, self.tokenizer.pad_token_id)
@@ -195,8 +210,25 @@ class FinQADataset(Dataset):
             input_ids = torch.cat([input_ids, labels[:-1]])
             labels = labels[1:]
             input_ids = input_ids.squeeze(0).cpu()
+            len_q = torch.tensor(len_q).cpu()
+            len_a = torch.tensor(len_a).cpu()
+        elif not self.teacher_forcing:
+            x, y = [], []
+            len_q, len_a = [], []
+            for k in range(1, min(self.max_a_len, len(labels)) - 1):
+                _x = pad_sequence(input_ids, self.max_length - k, self.tokenizer.pad_token_id)
+                _x = torch.cat([_x, labels[:k]])
+                _y = labels[k]
+                len_q.append(self.max_length - k)
+                len_a.append(k)
+                x.append(_x)
+                y.append(_y)
+            start_pos = self.max_length - 1
+            end_positions = self.max_length - 1
+            input_ids = torch.stack(x).cpu()
+            labels = torch.stack(y).reshape(-1,1).cpu()
         else:
-            raise NotImplementedError("Only pad_all_answers=True is supported for now.")
+            raise NotImplementedError("Only teacher_forcing=True is supported for now.")
 
         # return input_ids, labels, mask, start_pos, end_positions
         input_ids = input_ids.numpy()
@@ -206,8 +238,8 @@ class FinQADataset(Dataset):
             "labels": labels, 
             "start_positions": torch.tensor(start_pos), 
             "end_positions": torch.tensor(end_positions), 
-            "len_q": torch.tensor(len_q), 
-            "len_a": torch.tensor(len_a)
+            "len_q": len_q, 
+            "len_a": len_a
         }
 
 
@@ -321,7 +353,7 @@ def get_data(
         "short_answer": short_answer,
         "hint": kwargs.get("hint", False),
         "easy_task": kwargs.get("easy_task", False),
-        "pad_all_answers": kwargs.get("pad_all_answers", True),
+        "teacher_forcing": kwargs.get("teacher_forcing", True),
         "special_tokens": kwargs.get("special_tokens", SpecialTokens()),
     }
     print("params", params)

@@ -286,7 +286,6 @@ class Trainer:
             labels = batch["labels"].to(self.rank)
             start_pos = batch["start_positions"].min().to(self.rank)
             mask = batch["mask"].to(self.rank)
-            
             del batch
             assert not torch.isnan(input_ids).any(), "NaN found in sources!"
             # with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
