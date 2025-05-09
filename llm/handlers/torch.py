@@ -2,6 +2,7 @@ from llm.data.special_tokens import SpecialTokens
 from llm.data.tokenizer import Tokenizer
 from llm.data.glove import get_glove_tokenizer_and_embeddings
 from llm.model import LLM, DecoderBlock
+from utils import get_device
 import os
 
 
@@ -36,5 +37,7 @@ def torch_handler(params):
         embedding_=embedding_,
         **params["config"]
     )
+    model.to(get_device())
+    model.device = get_device()
     
     return model, tokenizer, DecoderBlock, special_tokens

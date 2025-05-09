@@ -1,0 +1,47 @@
+model:
+  name: "Qwen2.5-Math-1.5B-Instruct"
+  base_model: "Qwen/Qwen2.5-Math-1.5B-Instruct" 
+  type: "hgface"
+  tokenizer: "Qwen/Qwen2.5-Math-1.5B-Instruct"
+  ckpt_dir: "CKPT_DIR"
+  dir: "MODEL_DIR"
+  config:
+    max_seq_len: 4096
+  lora:
+    r: 8
+    lora_alpha: 32
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+    lora_dropout: 0.1
+    bias: "none"
+    lora_dropout: 0.1
+    modules_to_save:
+      - "classifier"
+  special_tokens:
+    pad: "<|padding|>"
+    start_of_text: "<|startoftext|>"
+    end_of_text: "<|endoftext|>"
+
+training:
+  batch_size: 4
+  test_batch_size: 16
+  epochs: 3000
+  learning_rate: 5e-5
+  step_size: 20
+  gamma: 0.7
+  patience: 3000
+  min_delta: 0.0
+  weight_decay: 1e-4
+  betas: [0.9, 0.999]
+  optimizer: "adamw"
+  loss_function: "cross_entropy"
+
+data:
+  short_answer: True
+  easy_task: False
+  hint: True
+  instruct: True
+  max_a_length: 8

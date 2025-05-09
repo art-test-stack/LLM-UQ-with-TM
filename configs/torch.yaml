@@ -36,3 +36,4 @@ data:
   easy_task: True
   hint: True
   max_a_length: 16
+  accumulation_steps: 500
