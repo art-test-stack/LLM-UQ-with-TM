@@ -274,7 +274,7 @@ class Trainer:
 
         return output
 
-    def _train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
+    def _train_epoch(self, train_loader) -> float:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
         vocab_size = self.model.vocab_size
@@ -320,7 +320,7 @@ class Trainer:
 
             del input_ids, labels, output, loss
 
-            if (i + 1) % accumulation_steps == 0:
+            if (i + 1) % self.accumulation_steps == 0:
                 if self.csv_object:
                     self.csv_object.update_model()
                 self.optimizer.step()
@@ -332,7 +332,7 @@ class Trainer:
             torch.cuda.empty_cache()
         train_loss = ddp_loss[0] / ddp_loss[1]
 
-        return float(train_loss.cpu().numpy() / accumulation_steps)
+        return float(train_loss.cpu().numpy() / self.accumulation_steps)
     
 
     def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:
@@ -381,7 +381,7 @@ class Trainer:
 
         return float(val_loss.cpu().numpy())
     
-    def _iter_train_epoch(self, train_loader, accumulation_steps: int = 1) -> float:
+    def _iter_train_epoch(self, train_loader) -> float:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
         vocab_size = self.model.vocab_size
@@ -420,14 +420,14 @@ class Trainer:
 
             del mask, input_ids, output, labels, logits
 
-            if (i + 1) % accumulation_steps == 0:
+            if (i + 1) % self.accumulation_steps == 0:
                 if self.csv_object:
                     self.csv_object.update_model()
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()
 
-        ddp_loss[0] *= accumulation_steps 
+        ddp_loss[0] *= self.accumulation_steps 
 
         if not self.no_cuda and self.world_size > 1:
             dist.all_reduce(ddp_loss, op=dist.ReduceOp.SUM)
