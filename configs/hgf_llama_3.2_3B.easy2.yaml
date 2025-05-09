@@ -1,14 +1,14 @@
 model:
-  name: "Qwen2.5-Math-1.5B"
-  base_model: "Qwen/Qwen2.5-Math-1.5B" 
+  name: "Llama-3dot2-3B"
+  base_model: "meta-llama/Llama-3.2-3B"
   type: "hgface"
-  tokenizer: "Qwen/Qwen2.5-Math-1.5B"
+  tokenizer: "meta-llama/Llama-3.2-3B"
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
   config:
-    max_seq_len: 4096
+    max_seq_len: 2048
   lora:
-    r: 8
+    r: 4
     lora_alpha: 32
     target_modules:
       - "q_proj"
@@ -21,9 +21,11 @@ model:
     modules_to_save:
       - "classifier"
   special_tokens:
-    pad: "<|padding|>"
-    start_of_text: "<|startoftext|>"
-    end_of_text: "<|endoftext|>"
+    pad: "<|reserved_special_token_0|>"
+    start_of_text: "<|begin_of_text|>"
+    end_of_text: "<|end_of_text|>"
+    start_of_answer: "<|reserved_special_token_3|>"
+    
 
 training:
   batch_size: 2
@@ -41,7 +43,6 @@ training:
 
 data:
   short_answer: True
-  easy_task: False
+  easy_task: True
   hint: True
-  instruct: True
-  max_a_length: 8
+  max_a_length: 16

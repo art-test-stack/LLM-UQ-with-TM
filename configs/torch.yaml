@@ -1,5 +1,5 @@
 model:
-  name: "torch2glove"
+  name: "original_transformer"
   type: "torch"
   tokenizer: "glove.6B.300d"
   config:
@@ -7,12 +7,12 @@ model:
     # model_size: 512
     # dim_ffn: 1024
     # nhead: 16
-    num_layers: 4
+    num_layers: 6
     model_size: 512
     dim_ffn: 1024
     nhead: 8
     dropout: 0.3
-    max_seq_len: 768
+    max_seq_len: 1024
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
 
