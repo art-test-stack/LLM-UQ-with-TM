@@ -103,9 +103,9 @@ class Evaluate:
         self.running_preds.append(preds)
         self.running_refs.append(refs)
 
-        if self.running_numel > 1e6:  # Adjust the limit as needed
-            self.compute()
-            self.reset_tensor()
+        # if self.running_numel > 1e6:  # Adjust the limit as needed
+        self.compute()
+        self.reset_tensor()
 
     @torch.inference_mode()
     def compute(self):
@@ -143,6 +143,20 @@ class Evaluate:
                 
         self.reset_tensor()
         return self.results(results)
+    
+    @torch.inference_mode()
+    def compute_accumulated(self, accumulation: int = 1):
+        """
+        Compute the evaluation task in batches
+        
+        Args:
+            accumulation: int
+                The size of the batch for the evaluation task
+        """
+        results = {}
+        if self.running_res:
+            results = { m: sum(v[-accumulation:]) / len(v[-accumulation:]) if len(v[-accumulation:]) >= 1 else None for m, v in self.running_res.items() }
+        return results
     
     def results(self, results = {}):
         if self.running_res:

@@ -1,14 +1,14 @@
 model:
-  name: "Llama-3dot2-1B_test"
-  base_model: "meta-llama/Llama-3.2-1B"
+  name: "Llama-3.2-3B-Instruct.full"
+  base_model: "meta-llama/Llama-3.2-3B-Instruct" 
   type: "hgface"
-  tokenizer: "meta-llama/Llama-3.2-1B"
+  tokenizer: "meta-llama/Llama-3.2-3B-Instruct"
   ckpt_dir: "CKPT_DIR"
   dir: "MODEL_DIR"
   config:
-    max_seq_len: 12
+    max_seq_len: 4096
   lora:
-    r: 4
+    r: 8
     lora_alpha: 32
     target_modules:
       - "q_proj"
@@ -19,19 +19,18 @@ model:
     bias: "none"
     lora_dropout: 0.1
     modules_to_save:
-      - "classifier"  
+      - "classifier"
   special_tokens:
     pad: "<|reserved_special_token_0|>"
     start_of_text: "<|begin_of_text|>"
     end_of_text: "<|end_of_text|>"
     start_of_answer: "<|reserved_special_token_3|>"
-    
 
 training:
   batch_size: 2
   test_batch_size: 16
-  epochs: 2
-  learning_rate: 5e-2
+  epochs: 3000
+  learning_rate: 5e-5
   step_size: 20
   gamma: 0.7
   patience: 3000
@@ -40,11 +39,10 @@ training:
   betas: [0.9, 0.999]
   optimizer: "adamw"
   loss_function: "cross_entropy"
-  accumulation_steps: 10
 
 data:
   short_answer: True
-  easy_task: True
+  easy_task: False
   hint: True
+  instruct: True
   max_a_length: 8
-  teacher_forcing: True

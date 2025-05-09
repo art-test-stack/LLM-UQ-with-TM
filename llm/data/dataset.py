@@ -70,7 +70,8 @@ class FinQADataset(Dataset):
         # res = { key: torch.tensor(val[idx]) for key, val in self.encodings.items() }
         res = self.encodings[idx]
         res["mask"] = mask
-        
+        res["idx"] = idx
+    
         return res
     
     def make_qa_pair(self, data):

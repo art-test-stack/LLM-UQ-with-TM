@@ -39,6 +39,7 @@ training:
   betas: [0.9, 0.999]
   optimizer: "adamw"
   loss_function: "cross_entropy"
+  accumulation_steps: 10
 
 data:
   short_answer: True

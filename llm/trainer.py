@@ -97,14 +97,13 @@ class Trainer:
             # "f1_train": [],
             # "f1_val": []
         }
-        self.accumulation_steps = kwargs.get("accumulation_steps", 1)
+        self.accumulation_steps = kwargs.get("accumulation_steps", 10)
         warmup_steps = kwargs.get("warmup_steps", 500)
         try:
             self.load_last_session()
             print("Previous session loaded!")
-        except NameError:
+        except:
             print("No previous session found!")
-            print(NameError)
         
         self.warmup = WarmUp(self.optimizer, warmup_steps=warmup_steps, current_step=self.history["curr_epoch"])
 
@@ -277,6 +276,8 @@ class Trainer:
     def _train_epoch(self, train_loader) -> float:
         self.model.train()
         ddp_loss = torch.zeros(2).to(self.rank)
+        acc_loss = torch.zeros(2).to(self.rank)
+        acc_ids = []
         vocab_size = self.model.vocab_size
 
         get_logits = self._get_batched_hgf_logits if self.model_type == "hgface" else self._get_batched_logits
@@ -286,7 +287,10 @@ class Trainer:
             labels = batch["labels"].to(self.rank)
             start_pos = batch["start_positions"].min().to(self.rank)
             mask = batch["mask"].to(self.rank)
+            batch_ids = batch["idx"].to(self.rank)
             del batch
+
+            acc_ids.extend(batch_ids.tolist())
             assert not torch.isnan(input_ids).any(), "NaN found in sources!"
             # with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             #     print("input_ids.min()", input_ids.min())
@@ -318,11 +322,25 @@ class Trainer:
             ddp_loss[0] += loss.item()
             ddp_loss[1] += labels.numel()
 
+            acc_loss[0] += loss.item()
+            acc_loss[1] += labels.numel()
+
             del input_ids, labels, output, loss
 
             if (i + 1) % self.accumulation_steps == 0:
-                if self.csv_object:
-                    self.csv_object.update_model()
+                if self.eval_train:
+                    res_accumulated = self.eval_train.compute_accumulated(self.accumulation_steps)
+                    if self.csv_object:
+                        # self.csv_object.update_model()
+                        self.csv_object.update_batch_csv(
+                            current_loss=(acc_loss[0] / acc_loss[1]).item(),
+                            current_metrics=res_accumulated,
+                            batch_ids=acc_ids
+                        )
+                    del acc_loss
+                    acc_loss = torch.zeros(2).to(self.rank)
+                    acc_ids = []
+                    break
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()

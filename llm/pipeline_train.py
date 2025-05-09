@@ -190,7 +190,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
 
     csv_object = TrainingDataFetcher(
         model=model, 
-        path=csv_path,
+        model_dir=model_dir,
         world_size=world_size,
         train_metrics=eval_train.result_keys,
         val_metrics=eval_val.result_keys,
