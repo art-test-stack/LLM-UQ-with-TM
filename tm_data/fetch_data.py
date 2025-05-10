@@ -157,11 +157,12 @@ class TrainingDataFetcher:
         # Temporary solution: take the stats at each batch iteration at store the mean of each stats at the end of the epoch
         # self.model.clean_nan()
         grads = self.batch_grads
-        self.current_grads = grads if not hasattr(self, "current_grads") else [ grad + current for grad, current in zip(grads, self.current_grads) ]
+        self.current_grads = grads if not hasattr(self, "current_grads") else grads + self.current_grads 
         # print("current_grads:", self.current_grads)
 
     @torch.inference_mode()
     def compute_grad_stats(self, doc: str = "epoch") -> None:
+        print(self.current_grads)
         grads = self.current_grads / self.acc_steps if doc == "epoch" else self.batch_grads
         # self.current_grads = torch.clone(grads)
 
