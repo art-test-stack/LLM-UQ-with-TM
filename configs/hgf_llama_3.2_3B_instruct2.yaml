@@ -1,5 +1,5 @@
 model:
-  name: "Llama-3.2-3B-Instruct2.full"
+  name: "Llama-3.2-3B-Instruct2"
   base_model: "meta-llama/Llama-3.2-3B-Instruct" 
   type: "hgface"
   tokenizer: "meta-llama/Llama-3.2-3B-Instruct"
@@ -39,6 +39,7 @@ training:
   betas: [0.9, 0.999]
   optimizer: "adamw"
   loss_function: "cross_entropy"
+  accumulation_steps: 500
 
 data:
   short_answer: True
@@ -46,3 +47,4 @@ data:
   hint: True
   instruct: True
   max_a_length: 8
+  teacher_forcing: True

@@ -118,9 +118,13 @@ def hgface_handler(params):
     auth_token = os.environ.get("HGF_TOKEN", None)
     model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype="auto", device_map="auto", token=auth_token)
 
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer, token=auth_token)
     special_tokens = params.get("special_tokens", SpecialTokens())
     special_tokens = SpecialTokens(**special_tokens)
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer, 
+        token=auth_token,
+        extra_special_tokens=special_tokens.dict())
     tokenizer = TokenizerHGFLlama(tokenizer, special_tokens)
     
     # print(tokenizer.vocab)

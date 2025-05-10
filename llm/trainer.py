@@ -97,7 +97,7 @@ class Trainer:
             # "f1_train": [],
             # "f1_val": []
         }
-        self.accumulation_steps = kwargs.get("accumulation_steps", 10)
+        self.accumulation_steps = kwargs.get("accumulation_steps", 500)
         warmup_steps = kwargs.get("warmup_steps", 500)
         try:
             self.load_last_session()
@@ -340,7 +340,7 @@ class Trainer:
                     del acc_loss
                     acc_loss = torch.zeros(2).to(self.rank)
                     acc_ids = []
-                    break
+                    
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.model.zero_grad()
