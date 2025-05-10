@@ -265,7 +265,7 @@ class Trainer:
         cache_position = torch.arange(0, input_ids.size(1), device=self.rank)
         output = self.model(
             input_ids, 
-            mask=mask, 
+            mask=~mask, 
             past_key_values=past_key_values, 
             do_sample=False, 
             cache_position=cache_position
