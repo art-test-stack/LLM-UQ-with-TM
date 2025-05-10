@@ -93,7 +93,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     train, test, val = get_data(**dataset_params)
     
     if not args.no_cuda:
-        sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=False)
+        sampler1 = DistributedSampler(train, rank=rank, num_replicas=world_size, shuffle=True)
         sampler2 = DistributedSampler(val, rank=rank, num_replicas=world_size, shuffle=False)
         sampler3 = DistributedSampler(test, rank=rank, num_replicas=world_size)
 

@@ -27,7 +27,7 @@ model:
     start_of_answer: "<|reserved_special_token_3|>"
 
 training:
-  batch_size: 4
+  batch_size: 2
   test_batch_size: 16
   epochs: 3000
   learning_rate: 5e-5
@@ -47,3 +47,4 @@ data:
   instruct: True
   max_a_length: 8
   teacher_forcing: False
+  accumulation_steps: 4000

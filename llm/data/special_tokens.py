@@ -19,3 +19,6 @@ class SpecialTokens:
         Returns a list of all special tokens.
         """
         return list(self.__dict__.values())
+    
+    def dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None}

@@ -1,7 +1,7 @@
 model:
   name: "original_transformer"
   type: "torch"
-  tokenizer: "glove.6B.300d"
+  tokenizer: "gpt2" # "glove.6B.300d"
   config:
     # num_layers: 12
     # model_size: 512
@@ -17,7 +17,7 @@ model:
   dir: "MODEL_DIR"
 
 training:
-  batch_size: 4
+  batch_size: 2
   test_batch_size: 16
   epochs: 3000
   learning_rate: 5e-5
@@ -35,5 +35,5 @@ data:
   short_answer: True
   easy_task: True
   hint: True
-  max_a_length: 16
+  max_a_length: 8
   accumulation_steps: 500
