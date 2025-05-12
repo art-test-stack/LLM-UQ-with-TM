@@ -1,5 +1,5 @@
 model:
-  name: "Llama-3.2-3B.full"
+  name: "Llama-3.2-3B"
   base_model: "meta-llama/Llama-3.2-3B" 
   type: "hgface"
   tokenizer: "meta-llama/Llama-3.2-3B"

@@ -162,7 +162,6 @@ class TrainingDataFetcher:
 
     @torch.inference_mode()
     def compute_grad_stats(self, doc: str = "epoch") -> None:
-        print(self.current_grads)
         grads = self.current_grads / self.acc_steps if doc == "epoch" else self.batch_grads
         # self.current_grads = torch.clone(grads)
 

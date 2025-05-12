@@ -265,10 +265,12 @@ class Trainer:
         cache_position = torch.arange(0, input_ids.size(1), device=self.rank)
         output = self.model(
             input_ids, 
-            mask=(~mask).int(), 
+            # mask=(~mask).int(), 
+            attention_mask=mask,
             past_key_values=past_key_values, 
             do_sample=False, 
-            cache_position=cache_position
+            use_cache=False,
+            cache_position=cache_position,
         ).logits
 
         return output
@@ -310,7 +312,7 @@ class Trainer:
             output = get_logits(input_ids, mask=mask)[:, start_pos:]
             del mask
             loss = self.loss_fn(output.reshape(-1, vocab_size), labels.reshape(-1))
-            loss = loss
+            loss = loss / self.accumulation_steps
             loss.backward()
 
             if self.eval_train:
@@ -350,7 +352,7 @@ class Trainer:
             torch.cuda.empty_cache()
         train_loss = ddp_loss[0] / ddp_loss[1]
 
-        return float(train_loss.cpu().numpy() / self.accumulation_steps)
+        return float(train_loss.cpu().numpy() * self.accumulation_steps)
     
 
     def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:

@@ -22,15 +22,15 @@ def torch_handler(params):
                 dim_model=params["config"]["model_size"],
                 force_init=False
             )
-    else:
-        special_tokens = params.get("special_tokens", {})
-        special_tokens = SpecialTokens(**special_tokens)
-        try:
-            tokenizer = Tokenizer(model_name=params["tokenizer"])
-        except:
-            tokenizer = Tokenizer(model_name="gpt2")
-        tokenizer.add_special_tokens(special_tokens.list())
-
+        else:
+            special_tokens = params.get("special_tokens", {})
+            special_tokens = SpecialTokens(**special_tokens)
+            try:
+                tokenizer = Tokenizer(model_name=params["tokenizer"], special_tokens=special_tokens)
+            except:
+                tokenizer = Tokenizer(model_name="gpt2", special_tokens=special_tokens)
+        # tokenizer.add_special_tokens(special_tokens.list())
+    print("tokenizer", tokenizer)
     model = LLM(
         vocab_size=tokenizer.get_vocab_size(), 
         padding_idx=tokenizer.pad_token_id, 

@@ -46,7 +46,7 @@ source .env
 JOB_NAME=$model_suffix
 
 # Submit job
-sbatch --job-name="$JOB_NAME.$train_mode.$RUN_TYPE" \
+sbatch --job-name="$JOB_NAME.$train_mode" \
      --account="$ACCOUNT" \
      --partition="$PARTITION" \
      --time="$TIMEOUT" \
@@ -56,6 +56,6 @@ sbatch --job-name="$JOB_NAME.$train_mode.$RUN_TYPE" \
      --gres="$GRES" \
      --constraint="$CONSTRAINT" \
      --mem="$MEM" \
-     --output="$OUTPUT_DIR/$JOB_NAME.$train_mode.$RUN_TYPE.txt" \
+     --output="$OUTPUT_DIR/$JOB_NAME.$train_mode.txt" \
      --export=ENV_DIR="$ENV_DIR",PARAMS_FILE="$PARAMS_FILE",TRAIN_MODE="$train_mode" \
      slurm/train_llm.slurm
