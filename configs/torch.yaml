@@ -37,3 +37,4 @@ data:
   hint: True
   max_a_length: 8
   accumulation_steps: 500
+  causal_mask: True

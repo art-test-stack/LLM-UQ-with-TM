@@ -36,6 +36,7 @@ class FinQADataset(Dataset):
         self.max_q_len = max_length - max_a_length
         self.max_a_len = max_a_length
         self.teacher_forcing = teacher_forcing
+        self.causal_mask = kwargs.get("causal_mask", False)
         self.special_tokens: SpecialTokens = kwargs.get("special_tokens", SpecialTokens())
         self.instruct = kwargs.get("instruct", False)
         
@@ -172,7 +173,7 @@ class FinQADataset(Dataset):
         start_pos = self.encodings[idx]["start_positions"]
         end_pos = self.encodings[idx]["end_positions"]
 
-        if self.teacher_forcing:
+        if self.causal_mask:
             attention_mask = np.triu(np.ones((self.max_length, self.max_length), dtype=np.int64), k=end_pos - self.max_length + 1)
             attention_mask[:,0] = 0
             attention_mask[:,len_q:start_pos] = 1
@@ -182,7 +183,7 @@ class FinQADataset(Dataset):
 
         else: 
             attention_mask = self.encodings[idx]["input_ids"] == self.tokenizer.pad_token_id
-            return attention_mask.astype(bool)
+            return ~(attention_mask.astype(bool))
 
     def read_data(self, data):
         # GET QUESTION AND ANSWER
@@ -356,6 +357,7 @@ def get_data(
         "easy_task": kwargs.get("easy_task", False),
         "teacher_forcing": kwargs.get("teacher_forcing", True),
         "special_tokens": kwargs.get("special_tokens", SpecialTokens()),
+        **kwargs
     }
     print("params", params)
     train = FinQADataset(train, **params)
