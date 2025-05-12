@@ -72,7 +72,8 @@ class TrainingDataFetcher:
         )
         self.CurrentBatch = make_dataclass(
             "CurrentBatch",
-            fields=[(f.name, f.type, field(default=None)) for f in fields(BatchData)]
+            fields=[ (f"{metric}_train", float, field(default=None)) for metric in train_metrics 
+            ] + [(f.name, f.type, field(default=None)) for f in fields(BatchData)]
         )
 
         self.init_data()

@@ -131,7 +131,6 @@ def hgface_handler(params):
     # TODO: Check if it is done correctly
     # model.base_model.padding_id = tokenizer.pad_token_id
     model.resize_token_embeddings(tokenizer.max_token_id)
-    
     lora_config = LoraConfig(
         **lora_config
         # target_modules=["q_proj", "v_proj", "o_proj", "gate_proj", "down_proj", "up_proj", "proj"],
