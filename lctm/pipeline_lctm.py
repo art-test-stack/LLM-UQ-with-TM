@@ -1,5 +1,5 @@
-from tm_data.preprocessing import preprocess_tm_data
-from pyTsetlinMachine.tools import Binarizer
+from tm_data.preprocessing import DataPreprocessor, Binarizer
+# from pyTsetlinMachine.tools import Binarizer
 from tmu.tsetlin_machine import LCTM
 
 import numpy as np
@@ -25,6 +25,11 @@ def create_dir(path: Union[str, Path], k: int = 0):
         res_path.mkdir(parents=True, exist_ok=True)
         return res_path
 
+def save_results(res_path: Path, res_name: str, res: dict, text_printed: str = "Interpretability Clauses"):
+    with open(res_path.joinpath(res_name), 'wb') as f:
+        pickle.dump(res, f, protocol=pickle.HIGHEST_PROTOCOL)
+        print(f'{text_printed} saved at:', res_path.joinpath(res_name))
+    return res
 
 def pipeline_lctm(args: Namespace):
     csv_path = args.csv_path
@@ -48,89 +53,133 @@ def pipeline_lctm(args: Namespace):
 
     print("Result of interpretability clusters at:", str(res_path))
 
-    generate_res_name = lambda run, num_clauses, T, S: f"run_{run}_clauses_{num_clauses}_T_{T}_S_{S}"
+    generate_res_name = lambda run, num_clauses, T, S: f"run_{run}_clauses_{num_clauses}_T_{T}_S_{S}.pkl"
 
-    X_train = preprocess_tm_data(csv_path, binarize=True)
+    
+    binarizer = Binarizer(max_bits_per_feature=10)
+
+    data_prep = DataPreprocessor(
+        csv_path=csv_path,
+        binarizer=binarizer,
+        columns_to_drop=[],
+        verbose=True,
+    )
+    X_train = data_prep.fit_transform()
+
     num_samples, num_features = X_train.shape
 
-    results = []
+    hyperparameters = {
+        'num_clauses': num_clauses_l,
+        'T': T_l,
+        'S': S_l,
+        'num_features': num_features,
+        'num_samples': num_samples,
+        'binarizer': str(binarizer),
+        'min_samples_per_sub_pattern': min_samples_per_sub_pattern,
+        'max_samples_per_sub_pattern': max_samples_per_sub_pattern,
+        'pattern_search_perc': pattern_search_perc,
+        'reset_guess_threshold': reset_guess_threshold,
+        'epsilon': epsilon,
+        'csv_path': csv_path,
+        'num_samples': num_samples,
+        'num_features': num_features,
+    }
+    save_results(res_path, 'hyperparameters.pkl', hyperparameters, text_printed='Hyperparameters')
+    
+    print("Number of samples for training:", num_samples)
+
     sil_scores = []
     runs = 10
-    while runs != 0:
+    run = 0
+    while run < runs:
         for num_clauses in num_clauses_l:
             for T in T_l:
                 if T > num_clauses:
                     continue
                 for S in S_l:
-                    lctm = LCTM(num_clauses, T, S, platform='CUDA', pattern_search_exit= pattern_search_perc, epsilon = epsilon, reset_guess_threshold = reset_guess_threshold)
-
-                    lctm.fit(num_clauses, num_features, [X_train])
-                    print('\nFinal Results--> (Grouped Samples):')
-                    all_samples = []
-                    all_labels  = []
-                    
-                    res_name = generate_res_name(runs, num_clauses, T, S)
-                    res = {
-                        'num_clauses': num_clauses,
-                        'T': T,
-                        'S': S,
-                        'interpretability_clauses': lctm.interpretability_clauses,
-                        'grouped_samples': lctm.grouped_samples
-                    }
-                    with open(res_path.joinpath(res_name), 'wb') as f:
-                        pickle.dump(res, f, protocol=pickle.HIGHEST_PROTOCOL)
-                        print('Interpretability Clauses saved at:', res_path.joinpath(res_name))
-
-                    print('Interpretability Clauses:', lctm.interpretability_clauses)
-                    print('Grouped Samples:', lctm.grouped_samples)
-
-                    for k, v in lctm.grouped_samples.items():
-                        for sample in v:
-                            all_samples.append(sample)
-                            all_labels.append(k)
-                        print('Cluster Size: ', len(v))
-                        #print(v)    
-                        print('Cluster Included Patterns Info:')
-                        # good = lctm.get_cluster_info(all_patterns, v)
-                        # if good:
-                            # good_counter += 1
-                        print('----------------------------------------')
-                        try:
-                            score = silhouette_score(all_samples, all_labels, metric='euclidean')
-                        except:
-                            score = -1
-                    # to extract learning (total penalities over inside loops of the LCTM)        
-                    '''for loop_index, info in lctm.learning_info.items():
-                        print('Loop: ', loop_index)
-                        print(info)
-                        print('-----------------------')'''
-                    sil_scores.append(score)
-                    # if good_counter == num_subpatterns:
-                    #     results.append(1)
-                    #     #print('Parameters are good: ', num_clauses, T, S)
-                    #     #exit()
-                    # else:
-                    #     results.append(0)
+                    res_name = generate_res_name(run, num_clauses, T, S)
+                    sil_score = train_lctm(
+                        X_train,
+                        num_clauses,
+                        T,
+                        S,
+                        num_features,
+                        res_path,
+                        res_name,
+                        pattern_search_perc,
+                        reset_guess_threshold,
+                        epsilon,
+                    )
+                    sil_scores.append({res_name: sil_score})
                         
-                        
-        runs -= 1
-    
-    print('Percentage of Successful Learning was ---->', np.mean(results))
-    print('SIL Score:  ---->', np.mean(sil_scores))
-    print('SIL ERROR:  ---->', np.std(sil_scores))
+        run += 1
+    res = [list(sil_score.values())[0] for sil_score in sil_scores]
+    print('Best SIL Score ---->', np.max(res))
+    print('SIL Score:  ---->', np.mean(res))
+    print('SIL ERROR:  ---->', np.std(res))
     print('Experiment Setup used [num_features, num_samples_per_subpattern] ---->', num_features, min_samples_per_sub_pattern)
 
             
+def train_lctm(
+        X_train: np.ndarray,
+        num_clauses: int,
+        T: int,
+        S: int,
+        num_features: int,
+        res_path: Path,
+        res_name: str,
+        pattern_search_perc: float,
+        reset_guess_threshold: int,
+        epsilon: float,
+    ) -> None:
+    lctm = LCTM(
+        num_clauses, 
+        T, 
+        S, 
+        platform='CUDA', 
+        pattern_search_exit=pattern_search_perc, 
+        epsilon = epsilon, 
+        reset_guess_threshold=reset_guess_threshold
+    )
+    lctm.fit(num_clauses, num_features, [X_train])
+    
+    all_samples = []
+    all_labels  = []
+    
 
+    for k, v in lctm.grouped_samples.items():
+        for sample in v:
+            all_samples.append(sample)
+            all_labels.append(k)
+        print('Cluster Size: ', len(v))
+        #print(v)    
+        print('Cluster Included Patterns Info:')
+        # good = lctm.get_cluster_info(all_patterns, v)
+        # if good:
+            # good_counter += 1
+        print('----------------------------------------')
+    try:
+        score = float(silhouette_score(all_samples, all_labels, metric='euclidean'))
+    except:
+        score = -1
+    # to extract learning (total penalities over inside loops of the LCTM)        
+    '''for loop_index, info in lctm.learning_info.items():
+        print('Loop: ', loop_index)
+        print(info)
+        print('-----------------------')'''
+    
+    res = {
+        'num_clauses': num_clauses,
+        'T': T,
+        'S': S,
+        'interpretability_clauses': lctm.interpretability_clauses,
+        'grouped_samples': lctm.grouped_samples,
+        'silhouette_score': score,
+    }
+    save_results(res_path, res_name, res)
 
-# Final Results--> (Grouped Samples):
-# Cluster Size:  44
-# Cluster Included Patterns Info:
-# ----------------------------------------
-# Cluster Size:  13
-# Cluster Included Patterns Info:
-# ----------------------------------------
-# Percentage of Successful Learning was ----> 0.0 mean +/- 2 * std / sqrt(10)
-# SIL Score:  ----> 0.288845648207222 67% SIL Score: +- 2 * 0.07 = [0.14, 0.43] , 95% +- 3 * 0.07 = [0.07, 0.5]
-# SIL ERROR:  ----> 0.06555037534759874
-# Experiment Setup used [num_features, num_samples_per_subpattern] ----> 220 700
+    print('Interpretability Clauses:', lctm.interpretability_clauses)
+    print('Grouped Samples:', lctm.grouped_samples)
+
+    return score
+
