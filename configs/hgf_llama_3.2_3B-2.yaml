@@ -1,5 +1,5 @@
 model:
-  name: "Llama-3.2-3B"
+  name: "Llama-3.2-3B-2"
   base_model: "meta-llama/Llama-3.2-3B" 
   type: "hgface"
   tokenizer: "meta-llama/Llama-3.2-3B"
@@ -39,7 +39,7 @@ training:
   betas: [0.9, 0.999]
   optimizer: "adamw"
   loss_function: "cross_entropy"
-  accumulation_steps: 500
+  accumulation_steps: 100
 
 data:
   short_answer: True

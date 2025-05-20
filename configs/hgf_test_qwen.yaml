@@ -1,5 +1,5 @@
 model:
-  name: "Qwen2.5-Math-1.5B"
+  name: "Qwen2.5-Math-1.5B_test"
   base_model: "Qwen/Qwen2.5-Math-1.5B" 
   type: "hgface"
   tokenizer: "Qwen/Qwen2.5-Math-1.5B"
@@ -8,7 +8,7 @@ model:
   config:
     max_seq_len: 12
   lora:
-    r: 4
+    r: 2
     lora_alpha: 32
     target_modules:
       - "q_proj"
@@ -26,7 +26,7 @@ model:
     end_of_text: "<|endoftext|>"
 
 training:
-  batch_size: 2
+  batch_size: 1
   test_batch_size: 16
   epochs: 2
   learning_rate: 5e-2

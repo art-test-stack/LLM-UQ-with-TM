@@ -22,7 +22,7 @@ source ${PIP_DIR}
 cd ${TILDROOT}
 # Uncomment the following lines to install requirements
 # pip install --upgrade pip 
-pip install -r requirements.txt
+# pip install -r requirements.txt
 python -c "import torch; print(torch.__version__, torch.version.cuda)"
 nvidia-smi
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True\

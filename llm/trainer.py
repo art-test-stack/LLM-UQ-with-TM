@@ -97,7 +97,7 @@ class Trainer:
             # "f1_train": [],
             # "f1_val": []
         }
-        self.accumulation_steps = kwargs.get("accumulation_steps", 500)
+        self.accumulation_steps = kwargs.get("accumulation_steps", 100)
         warmup_steps = kwargs.get("warmup_steps", 500)
         try:
             self.load_last_session()
@@ -263,16 +263,24 @@ class Trainer:
     def _get_batched_hgf_logits(self, input_ids: torch.Tensor, mask: torch.Tensor):
         past_key_values = DynamicCache()
         cache_position = torch.arange(0, input_ids.size(1), device=self.rank)
-        output = self.model(
-            input_ids, 
-            # mask=(~mask).int(), 
-            attention_mask=mask,
-            past_key_values=past_key_values, 
-            do_sample=False, 
-            use_cache=False,
-            cache_position=cache_position,
-        ).logits
 
+        if "qwen" in self.name.lower():
+            dtype = next(self.model.parameters()).dtype
+            output = self.model(
+                input_ids, 
+                attention_mask=mask.to(dtype=dtype),
+                # past_key_values=past_key_values, 
+                use_cache=False,
+                # cache_position=cache_position.to(dtype=dtype),
+            ).logits
+        else:
+            output = self.model(
+                input_ids, 
+                attention_mask=mask.long(),
+                past_key_values=past_key_values, 
+                use_cache=False,
+                cache_position=cache_position,
+            ).logits
         return output
 
     def _train_epoch(self, train_loader) -> float:
@@ -312,7 +320,7 @@ class Trainer:
             output = get_logits(input_ids, mask=mask)[:, start_pos:]
             del mask
             loss = self.loss_fn(output.reshape(-1, vocab_size), labels.reshape(-1))
-            loss = loss / self.accumulation_steps
+            loss = loss 
             loss.backward()
 
             if self.eval_train:
@@ -352,7 +360,7 @@ class Trainer:
             torch.cuda.empty_cache()
         train_loss = ddp_loss[0] / ddp_loss[1]
 
-        return float(train_loss.cpu().numpy() * self.accumulation_steps)
+        return float(train_loss.cpu().numpy())
     
 
     def _val_epoch(self, val_loader: DataLoader, mode: str ="greedy") -> float:

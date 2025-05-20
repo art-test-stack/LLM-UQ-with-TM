@@ -117,7 +117,8 @@ def hgface_handler(params):
     lora_config = params.get("lora", base_lora_config)
     auth_token = os.environ.get("HGF_TOKEN", None)
     model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype="auto", device_map="auto", token=auth_token)
-
+    if "test" in params["name"]:
+        model.model.layers = model.model.layers[:2]
     special_tokens = params.get("special_tokens", SpecialTokens())
     special_tokens = SpecialTokens(**special_tokens)
 

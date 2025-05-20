@@ -1,7 +1,7 @@
 model:
-  name: "original_transformer"
+  name: "original_transformer.glove"
   type: "torch"
-  tokenizer: "gpt2" # "glove.6B.300d"
+  tokenizer: "glove.6B.300d"
   config:
     # num_layers: 12
     # model_size: 512
