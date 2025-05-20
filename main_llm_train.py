@@ -40,12 +40,11 @@ if __name__=="__main__":
     # torch.backends.cudnn.benchmark = True
     torch.cuda.empty_cache()
     from random import randint
-
+    WORLD_SIZE = 1
     master_port = f'{randint(10_000,40_000)}'
     if WORLD_SIZE == 0:
         print("No GPU available")
     if WORLD_SIZE<=1:
-        print("WORLD SIZE = ", WORLD_SIZE)
         train_llm_pipeline(rank=0, world_size=1, master_port=master_port, args=args)
     else:
         print("WORLD SIZE = ", WORLD_SIZE)

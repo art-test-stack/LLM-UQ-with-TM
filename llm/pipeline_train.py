@@ -61,7 +61,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     
     # Initialize the process group
     print("rank", rank)
-    if not args.no_cuda:
+    if not args.no_cuda and (world_size > 1):
         setup(rank, world_size, master_port)
     else:
         rank = get_device()
@@ -131,7 +131,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
         
         print("Model layers:", model)
 
-    if not args.no_cuda:
+    if not args.no_cuda and (world_size > 1):
         torch.cuda.set_device(rank)
     # Wrap the model with FSDP
     # TODO: add DDP wrapper
