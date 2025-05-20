@@ -12,14 +12,16 @@ def preprocess_tm_data(
     ) -> np.ndarray:
     print("csv_path", csv_path)
     df = pd.read_csv(csv_path)
-    df.drop(columns=["batch_size"], inplace=True)
-    epochs_to_remove = [0]
+    # df.drop(columns=["batch_size"], inplace=True)
+    # epochs_to_remove = [0]
     print("df.columns", df.columns)
 
-    df.drop(df[df["epoch"].isin(epochs_to_remove)].index, inplace=True)
+    df = df.iloc[1:]
+    # df.drop(df[df["epoch"].isin(epochs_to_remove)].index, inplace=True)
     # Drop columns with 'inf' values and print the columns dropped
     if drop_epoch:  
-        df.drop(columns=["epoch","grad_cos_dist"], inplace=True)
+        # df.drop(columns=["epoch","grad_cos_dist","batch_ids"], inplace=True)
+        df.drop(columns=["epoch","batch_ids","grad_median"], inplace=True)
     print("df.columns", df.columns)
     cols_with_inf = df.columns[df.isin([np.inf, -np.inf]).any()].tolist()
     if cols_with_inf:
