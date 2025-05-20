@@ -1,3 +1,6 @@
+#!/bin/bash
+MODEL=$1
+
 source .env && sbatch --job-name=$TM_JOB_NAME.$TM_RUN_TYPE \
     --account=$ACCOUNT \
     --partition=$TM_PARTITION \
@@ -9,5 +12,5 @@ source .env && sbatch --job-name=$TM_JOB_NAME.$TM_RUN_TYPE \
     --constraint=$TM_CONSTRAINT \
     --mem=$TM_MEM \
     --output=$OUTPUT_DIR/$TM_JOB_NAME.$TM_RUN_TYPE.txt \
-    --export=ENV_DIR=$ENV_DIR \
+    --export=ENV_DIR=$ENV_DIR,MODEL=$MODEL \
     slurm/lctm.slurm
