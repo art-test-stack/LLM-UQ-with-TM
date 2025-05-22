@@ -130,6 +130,7 @@ class DataPreprocessor:
         self._default_columns_to_drop()
         self.verbose = verbose
         self.nb_batch_ids = 0
+        self.columns_dropped = []
         # self.binarizer = Binarizer(max_bits_per_feature=max_bits_per_feature)
 
     def _default_columns_to_drop(self):
@@ -161,9 +162,11 @@ class DataPreprocessor:
             batch_ids_ohe = pd.DataFrame(mlb.fit_transform(df["batch_ids"]), columns=[f"batch_id_{cls}" for cls in mlb.classes_], index=df.index)
             self.nb_batch_ids = len(mlb.classes_)
             df.drop(columns=["batch_ids"], inplace=True)
+        else: nb_batch_ids = 0
         for col in self.columns_to_drop:
             if col in df.columns:
                 df.drop(columns=col, inplace=True)
+                self.columns_dropped.append(col)
             
         cols_with_inf = df.columns[df.isin([np.inf, -np.inf]).any()].tolist()
         if cols_with_inf:
@@ -173,7 +176,8 @@ class DataPreprocessor:
         X = df.to_numpy(copy=True)
         if max_id is not None:
             X = X[:max_id,:]
-            batch_ids_ohe = batch_ids_ohe[:max_id]
+            if "batch_ids" in df.columns:
+                batch_ids_ohe = batch_ids_ohe[:max_id]
 
         print("X.shape", X.shape)
 
@@ -186,7 +190,8 @@ class DataPreprocessor:
         else:
             X_train = X
         
-        X_train = np.concat([batch_ids_ohe.to_numpy(), X_train], axis=1)
+        if "batch_ids" in df.columns:
+            X_train = np.concat([batch_ids_ohe.to_numpy(), X_train], axis=1)
 
         print("X_train.shape", X_train.shape)
         if return_columns:
