@@ -158,7 +158,7 @@ class DataPreprocessor:
         # One-hot encode 'batch_ids' column
         is_batch_ids = False
 
-        if "batch_ids" in df.columns and not self.drop_batch_ids:
+        if ("batch_ids" in df.columns) and (not self.drop_batch_ids) and self.binarizer:
             # Convert string representation of list to actual list
             df["batch_ids"] = df["batch_ids"].apply(lambda x: eval(x) if isinstance(x, str) else [])
             mlb = MultiLabelBinarizer()
@@ -194,7 +194,7 @@ class DataPreprocessor:
             X_train = self.binarizer.transform(X)
             X_train = X_train.astype(np.int8)
         else:
-            X_train = X
+            X_train = pd.DataFrame(X, columns=columns)
         
         if is_batch_ids:
             X_train = np.concat([batch_ids_ohe.to_numpy(), X_train], axis=1)

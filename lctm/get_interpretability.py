@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 from typing import Union, Optional
+from matplotlib.colors import ListedColormap, BoundaryNorm
 from pathlib import Path
 from enum import Enum
 import re
@@ -21,16 +22,16 @@ class LCTMResults:
     Class to handle the results of the LCTM model.
     """
 
-    def __init__(self, llm_name: str, data: Optional[str] = "batch", verbose: bool = False):
+    def __init__(self, llm_name: str, data: Optional[str] = "batch", verbose: bool = False, plot_titles: bool = False):
         assert data in DataPreprocessed._value2member_map_, "Data preprocessed not supported. Choose between 'batch' and 'epoch'"
 
         self.llm_name = llm_name
-        self.model_dir = get_model_dir(model_name=llm_name)
+        self.model_dir = get_model_dir(model_name=llm_name, return_error=True)
         self.interpretability_clauses_dir = self.model_dir.joinpath("interpretability_clauses")
         self.num_folders = sum(1 for p in self.interpretability_clauses_dir.iterdir() if p.is_dir())
         print(f"Number of folders in interpretability_clauses: {self.num_folders}")
-        self.init_current_example()
         self.get_path = lambda run: f"{self.current_example}/{run}"
+        self.plot_titles = plot_titles
 
         data = DataPreprocessed(data)
         if data == DataPreprocessed.BATCH:
@@ -44,8 +45,8 @@ class LCTMResults:
             raise FileNotFoundError(f"Data folder does not exist at: {self.data_folder}.")
         
         self.verbose = verbose
-        
-        
+        self.init_current_example()
+
     def __iter__(self):
         """
         Initialize the iterator.
@@ -58,7 +59,15 @@ class LCTMResults:
         Get the next example.
         """
         return self.next_example()
-     
+    
+    def get_current_example(self):
+        self.current_res = LCTMCurrentResults(
+            folder=self.current_folder, 
+            data_folder=self.data_folder, 
+            verbose=self.verbose, 
+            plot_titles=self.plot_titles
+        )
+
     def init_current_example(self):
         """
         Initialize the current example to 0.
@@ -67,6 +76,7 @@ class LCTMResults:
         self.current_folder = self.interpretability_clauses_dir.joinpath("example")
         if not self.current_folder.exists():
             raise FileNotFoundError(f"Interpretability clauses directory does not exist at: {self.current_folder}.")
+        return self.get_current_example()
 
     def next_example(self):
         """
@@ -78,38 +88,55 @@ class LCTMResults:
         self.current_example += 1
         
         self.current_folder = self.interpretability_clauses_dir.joinpath(f"example_{self.current_example}")
-        self.current_results = LCTMCurrentResults(self.current_folder)
-
-        return self.current_results
+        print(f"Current folder: {self.current_folder}")
+        print(f"Data folder: {self.data_folder}")
+        self.get_current_example()
+        return self.current_res
     
     def get_examples(self):
-        return self.current_results
+        return self.current_res
     
 
 class LCTMCurrentResults:
-    def __init__(self, folder: Union[str, Path], data_folder: Path, verbose: bool = False):
+    def __init__(self, folder: Union[str, Path], data_folder: Path, verbose: bool = False, plot_titles: bool = False):
         self.runs = [ f for f in folder.iterdir() if f.is_file() and "run_" in f.name ]
+
+        self.verbose = verbose
         self.run = self.runs[0]
         self.current = 0
         self.max_runs = len(self.runs)
         self.data_folder = data_folder
+        self.plot_titles = plot_titles
 
-        with open(data_folder.joinpath("hyperparameters.pkl"), 'rb') as file:
+        hp_file = data_folder.joinpath("hyperparameters.pkl") if data_folder.joinpath("hyperparameters.pkl").exists() else data_folder.parent.parent.joinpath("default_hyperparameters.pkl")
+        
+        with open(hp_file, 'rb') as file:
             self.hyperparameters = pickle.load(file)
 
-        self._get_binarizer()  # Parse the binarizer representation from hyperparameters
-
+        self._get_binarizer()
+        self._prepare_data()  # Parse the binarizer representation from hyperparameters
+    
+        # Parse the binarizer representation from hyperparameters
+    
+    def _prepare_data(self):
         data_preprocesor = DataPreprocessor(
-            csv_path=data_folder,
+            csv_path=self.data_folder,
             binarizer=self.binarizer,
-            columns_to_drop=[],
+            columns_to_drop=self.hyperparameters["columns_dropped"],
             verbose=True,
         )
         self.data, self.columns = data_preprocesor.fit_transform(max_id=self.hyperparameters["num_samples"], return_columns=True)
         self.batch_ids = data_preprocesor.nb_batch_ids
-        self.verbose = verbose
-        # Parse the binarizer representation from hyperparameters
-        
+
+        data_preprocesor = DataPreprocessor(
+            csv_path=self.data_folder,
+            binarizer=None,
+            columns_to_drop=self.hyperparameters["columns_dropped"],
+            verbose=False,
+        )
+        data_preprocesor.columns_to_drop.remove("epoch")
+        self.raw_data = data_preprocesor.fit_transform(max_id=self.hyperparameters["num_samples"], return_columns=False)
+
     def _get_binarizer(self):
         binarizer_repr = self.hyperparameters.get('binarizer', '')
         if binarizer_repr.startswith('Binarizer('):
@@ -123,12 +150,13 @@ class LCTMCurrentResults:
             self.binarizer = AugmentedBinarizer(max_bits_per_feature=max_bits)
         else:
             raise ValueError(f"Unknown binarizer type: {binarizer_repr}")
+        assert self.hyperparameters["max_bits_per_feature"] == self.binarizer.max_bits_per_feature, f"Hyperparameters and binarizer max_bits_per_feature do not match. Got: {self.hyperparameters['max_bits_per_feature']} and {self.binarizer.max_bits_per_feature}"
     
     def __repr__(self):
         return f"LCTMSubResults('{self.run}')"
     
     def __iter__(self):
-        return LCTMResult(path=self.run, data=self.data, hyperparameters=self.hyperparameters, verbose=self.verbose)
+        self.current_res = LCTMResult(path=self.run, data=self.data, hyperparameters=self.hyperparameters, verbose=self.verbose)
     
     def __next__(self):
         if self.current + 1 > self.max_runs:
@@ -136,71 +164,172 @@ class LCTMCurrentResults:
         self.current += 1
         self.run = self.runs[self.current]
         # self.run = self.runs[self.current - 1]
-        self.current_results = LCTMResult(self.run, self.data, self.hyperparameters, verbose=self.verbose)
-        return self.current_results
+        print(f"Current example: {self.run}")
+        self.current_res = LCTMResult(self.run, self.data, self.hyperparameters, verbose=self.verbose)
+        return self.current_res
+    
+    def get_max_threshold_by_feature(self):
+        X_t = []
+        if isinstance(self.data, list):
+            data = np.array(self.data)
+        else:
+            data = self.data
+        max_bits_per_feature = self.hyperparameters["max_bits_per_feature"]
+        assert data.shape[1] % max_bits_per_feature == 0, f"The number of features binarized should be a multiple of max_bits_per_feature value. Got: {data.shape[1]} and {max_bits_per_feature}"
+        nb_features = data.shape[1] // max_bits_per_feature
+        for feature in range(nb_features):
+            x = data[:,feature * max_bits_per_feature:(feature + 1) * max_bits_per_feature]
+            x_t = np.sum(x, axis=1, keepdims=True)
+            # x_t = np.argmax(1 - x, axis=1, keepdims=True)
+            X_t.append(x_t)
+        X_t = np.concat(X_t, axis=1)
+        return X_t 
  
+    def plot_features_threshold(self, with_features_colors=False):
+        data = self.get_max_threshold_by_feature()
+        for c_id, idx in self.current_res.ids_by_class.items():
+            plt.figure(figsize=(15, 9))
+            x = np.arange(data.shape[1]).tolist() 
+            labels = list(self.columns)
 
-    # def plot_features_threshold(X, ids_by_class, run, with_features_colors=False, with_sample_colors=False):
-    #     for c_id, idx in ids_by_class.items():
-    #         plt.figure(figsize=(15, 9))
-    #         x = np.arange(X.shape[1]).tolist() 
-    #         labels = list(df_columns)
+            plt.axes().set_xticks(x, labels, rotation=45)
+            if with_features_colors:
+                for i in range(data.shape[1]):
+                    plt.scatter(np.full_like(idx, fill_value=i), data[idx,i])
+            else:
+                plt.scatter(x * data[idx].shape[0], data[idx])
+            print(f"Scatter plot of class {c_id} on run {self.run}")
+            plt.xlabel("Features")
+            plt.ylabel("Thresholds")
+            plt.show()
 
-    #         plt.axes().set_xticks(x, labels, rotation=45)
-    #         if with_features_colors:
-    #             for i in range(X.shape[1]):
-    #                 plt.scatter(np.full_like(idx, fill_value=i), X[idx, i])
-    #         elif with_sample_colors:
-    #             cmap = plt.cm.get_cmap('viridis', len(idx))
-    #             for i, sample_idx in enumerate(idx):
-    #                 plt.scatter(x, X[sample_idx], color=cmap(i), label=f"Epoch {sample_idx+ 1}")
-    #             sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=len(idx)-1))
-    #             sm.set_array([])
-    #             # cbar = plt.colorbar(sm, ticks=range(len(idx)))
-    #             # cbar.set_label('Sample Index')
-    #         else:
-    #             plt.scatter(x * X[idx].shape[0], X[idx])
-    #         plt.xlabel("Features")
-    #         plt.ylabel("Thresholds")
-    #         plt.title(f"Scatter plot of class {c_id} on run {run}")
-    #         plt.legend(loc='upper right', bbox_to_anchor=(1.2, 1))
-    #         plt.show()
+    def plot_clauses_matrix(self):
+        """
+        Plot a matrix for each class and clause, where rows are features, columns are bits (max_bits_per_feature),
+        and cells are colored green if x_i is present (True), red if ¬x_i (False), and white if not present.
+        """
+        max_bits_per_feature = self.hyperparameters["max_bits_per_feature"]
+        nb_batch_ids = self.hyperparameters["nb_batch_ids"]
+        num_features = len(self.columns) - nb_batch_ids
 
-    # def plot_current_examples(self):
-    #     current_example_runs = [ f for f in self.current_folder.iterdir() if f.is_file()]
-    #     for run in current_example_runs:
-    #         print("-"*20)
-    #         print(f"\nRUN {run}")
-    #         print("-"*10)
+        for c_id, clause_lists in self.current_res.interpretability_clauses.items():
+            for clause_idx, clause in enumerate(clause_lists):
+                # Create a matrix: rows=features, cols=max_bits_per_feature
+                
+                matrix = np.zeros((num_features, max_bits_per_feature), dtype=int)
+                for literal in clause:
+                    match = re.match(r'^(¬| )x\s*(\d+)', literal)
+                    # match = re.match(r'^(¬)?x\s*(\d+)', literal)
+                    if match:
+                        neg, idx = match.groups()
+                        idx = int(idx)
+                        if idx >= nb_batch_ids:
+                            idx -= nb_batch_ids
+                            feature = idx // max_bits_per_feature
+                            bit = idx % max_bits_per_feature
+                            if neg == '¬':
+                                matrix[feature, bit] = -1  # Red for negative
+                            else:
+                                matrix[feature, bit] = 1   # Green for positive
+                # matrix = matrix.T
+                cmap = ListedColormap(['red', 'white', 'green'])
+                bounds = [-1.5, -0.5, 0.5, 1.5]
+                norm = BoundaryNorm(bounds, cmap.N)
+                plt.imshow(matrix, aspect='auto', cmap=cmap, norm=norm)
+                plt.ylabel("Bits per Feature")
+                plt.xlabel("Features")
+                plt.title(f"Class {c_id} - Clause {clause_idx}")
+                plt.colorbar(ticks=[-1, 0, 1], label='Literal', format=lambda x, _: {1: 'x_i', 0: 'None', -1: '¬x_i'}.get(x, ''))
+                plt.yticks(np.arange(num_features), self.columns)
+                plt.xticks(np.arange(max_bits_per_feature), [fr"$\tau${b}" for b in range(max_bits_per_feature)])
+                plt.show()
+    
+    def plot_batch_ids_by_class(self, plot_zeroes: bool = False):
+        """
+        For each class, plot the count of 1s and 0s for each of the first nb_batch_ids features in X.
+        """
+        nb_batch_ids = self.hyperparameters["nb_batch_ids"]
+        if nb_batch_ids == 0:
+            print("No batch ids in data.")
+            return
 
+        for class_name, X in self.current_res.grouped_samples.items():
+            X = np.array(X)
+            batch_features = X[:, :nb_batch_ids]
+            ones = np.sum(batch_features, axis=0)
+            if plot_zeroes:
+                zeros = batch_features.shape[0] - ones
+            x = np.arange(nb_batch_ids)
+            width = 0.35
+            plt.figure(figsize=(10, 5))
+            if plot_zeroes:
+                plt.bar(x - width/2, zeros, width, label='0s')
+                plt.bar(x + width/2, ones, width, label='1s')
+            else:
+                plt.bar(x + width/2, ones, width)
+            # plt.axes().set_xticks(x, x, rotation=45)
+            if self.plot_titles:
+                plt.title(f"Class {class_name} - Count of Batch Ids")
+            plt.xlabel("Batch Index")
+            plt.ylabel("Count")
+            # plt.xticks(x, [f"Batch {i}" for i in range(nb_batch_ids)])
+            # plt.legend()
+            plt.show()
 
+    def plot_batch_ids(self):
+        """
+        Plot the batch ids for each class on the same plot, using a different color for each class.
+        """
+        nb_batch_ids = self.hyperparameters["nb_batch_ids"]
+        if nb_batch_ids == 0:
+            print("No batch ids in data.")
+            return
 
-    #         print("\nSample to Clauses Mapping:")
-    #         # for key, clause_lists in sorted_obj.items():
-    #         #     sample_clauses_mapping[key] = []
-    #         #     for clause_list in clause_lists:
-    #         #         associated_samples = set(range(X_train.shape[0]))
-    #         #         for c_id, clause in enumerate(clause_list):
-    #         #             feature = int(clause.split('x')[1])
-    #         #             if clause.startswith('¬'):
-    #         #                 associated_samples &= set(np.where(X_train[:, feature] == 0)[0])
-    #         #             else:
-    #         #                 associated_samples &= set(np.where(X_train[:, feature] == 1)[0])
-                    
-    #         #             if associated_samples == set():
-    #         #                 print("No associated samples")
-    #         #                 print("Break at clause:", clause, "with id:", c_id)
-    #         #                 break
-    #         #         sample_clauses_mapping[key].append(list(associated_samples))
-    #         #         unassociated_samples -= associated_samples
+        plt.figure(figsize=(10, 5))
+        colors = plt.cm.get_cmap('tab10', len(self.current_res.grouped_samples))
+        for idx, (class_name, X) in enumerate(self.current_res.grouped_samples.items()):
+            X = np.array(X)
+            batch_features = X[:, :nb_batch_ids]
+            x = np.arange(nb_batch_ids)
+            plt.bar(x, batch_features.sum(axis=0), alpha=0.7, label=str(class_name), color=colors(idx))
+        plt.xlabel("Batch Index")
+        plt.ylabel("Count")
+        if self.plot_titles:
+            plt.title("Batch Ids by Class")
+        plt.legend()
+        plt.show()
 
-    #         # unassociated_samples = list(unassociated_samples)
+    def plot_epoch_by_class(self):
+        """
+        Plot the epoch by class for each class.
+        """
+        
+        for class_name, ids in self.current_res.ids_by_class.items():
+            epochs = self.raw_data.iloc[ids]["epoch"]
+            plt.figure(figsize=(10, 5))
+            plt.hist(epochs, bins=range(int(epochs.min()), int(epochs.max()) + 2), alpha=0.7, color='skyblue', edgecolor='black')
+            if self.plot_titles:
+                plt.title(f"Epoch distribution for class {class_name}")
+            else:
+                plt.title(f"Epoch distribution for class {class_name} - Run {self.run}")
+            plt.xlabel("Epoch")
+            plt.ylabel("Count")
+            plt.show()
 
-    #         # print("Sample to Clauses Mapping:", sample_clauses_mapping)
-    #         ## Match samples to grouped samples
-            
+    def plot_epochs(self):
+        plt.figure(figsize=(10, 5))
+        for class_name, ids in self.current_res.ids_by_class.items():
+            epochs = self.raw_data.iloc[ids]["epoch"]
+            plt.hist(epochs, bins=range(int(epochs.min()), int(epochs.max()) + 2), alpha=0.5, label=str(class_name), edgecolor='black')
+        if self.plot_titles:
+            plt.title("Epoch distribution by class")
+        else:
+            print("Epoch distribution")
+        plt.xlabel("Epoch")
+        plt.ylabel("Count")
+        plt.legend()
+        plt.show()
 
-    #         plot_features_threshold(X_t, ids_by_class, run, with_sample_colors=True)
 
 class LCTMResult:
     def __init__(self, path, data: np.ndarray, hyperparameters: dict = None, verbose: bool = False):
@@ -219,7 +348,7 @@ class LCTMResult:
 
         for c_id, (k, v) in enumerate(obj["interpretability_clauses"].items()):
             new_obj["interpretability_clauses"][classes[c_id]] = v
-            new_obj["grouped_samples"][classes[c_id]] = obj["grouped_samples"][k]
+            new_obj["grouped_samples"][classes[c_id]] = obj["grouped_samples"][k].astype(np.int8)
 
         if self.verbose:
             print("\nNumber of classes:", len(obj["grouped_samples"]))
@@ -312,48 +441,34 @@ class LCTMResult:
     def plot_interpretability_clauses_image(self):
         pass
 
-    def plot_features_threshold(self, data, with_features_colors=False):
-        for c_id, idx in self.ids_by_class.items():
-            plt.figure(figsize=(15, 9))
-            x = np.arange(data.shape[1]).tolist() 
-            labels = list(self.columns)
-
-            plt.axes().set_xticks(x, labels, rotation=45)
-            if with_features_colors:
-                for i in range(data.shape[1]):
-                    plt.scatter(np.full_like(idx, fill_value=i), X[idx,i])
-            else:
-                plt.scatter(x * data[idx].shape[0], data[idx])
-            print(f"Scatter plot of class {c_id} on run {self.run}")
-            plt.xlabel("Features")
-            plt.ylabel("Thresholds")
-            plt.show()
 
     def get_ids_by_class(self, data):
         grouped_samples = {k: v.tolist() for k, v in self.grouped_samples.items()}
         items_by_class = { k: 0 for k in grouped_samples.keys() }
         not_associated = 0
         ids_by_class = { k: [] for k in grouped_samples.keys() }
-
+        not_associated_ids = []
         X = data.tolist()
         for x in X:
             associated = False
             for k, v in grouped_samples.items():
                 if x in v:
                     items_by_class[k] += 1
-                    ids_by_class[k].append(X.pop(X.index(x)))
+                    idx = X.index(x)
+                    ids_by_class[k].append(idx)
                     # ids_by_class[k].append(X.index(x))
                     associated = True
                     break
             if not associated:
+                not_associated_ids.append(X.index(x))
                 not_associated += 1
 
-            if self.verbose:
-                print("\nItems by class:", items_by_class)
-                print("Number of not associated samples:", not_associated)
-                print("Not associated samples ids:", X)
-                print("ids by class:", ids_by_class)
-        return ids_by_class, X
+        if self.verbose:
+            print("\nItems by class:", items_by_class)
+            print("Number of not associated samples:", not_associated)
+            print("Not associated samples ids:", not_associated_ids)
+            print("ids by class:", ids_by_class)
+        return ids_by_class, not_associated_ids
     
     def get_duplicates(self, data):
         duplicates = np.unique([tuple(row) for row in data], axis=0)
@@ -376,17 +491,3 @@ class LCTMResult:
                     print(f"Row ID of the duplicate in X_train: {row_ids}")
         return duplicates
                     
-
-    def get_max_threshold_by_feature(self, data, max_bytes_by_features: int = 10):
-        X_t = []
-        if isinstance(data, list):
-            data = np.array(data)
-        assert data.shape[1, ] % max_bytes_by_features == 0, "the number of features binarized should be a multiple of max_bytes_by_features value"
-        nb_features = data.shape[1] // max_bytes_by_features
-        for feature in range(nb_features):
-            x = data[:,feature * max_bytes_by_features:(feature + 1) * max_bytes_by_features]
-            x_t = np.sum(x, axis=1, keepdims=True)
-            # x_t = np.argmax(1 - x, axis=1, keepdims=True)
-            X_t.append(x_t)
-        X_t = np.concat(X_t, axis=1)
-        return X_t

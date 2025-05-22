@@ -32,7 +32,7 @@ class EarlyStopping:
                 self.early_stop = True
 
 
-def get_model_dir(model_name: Union[str, Path], model_dir: Optional[str] = None, training_type: Optional[str] = "batch") -> Path:
+def get_model_dir(model_name: Union[str, Path], model_dir: Optional[str] = None, training_type: Optional[str] = "batch", return_error: bool = False) -> Path:
     """
     Get the model directory for a given model name.
 
@@ -55,8 +55,13 @@ def get_model_dir(model_name: Union[str, Path], model_dir: Optional[str] = None,
     if isinstance(model_dir, str):
         model_dir = Path(model_dir)
     if not model_dir.exists():
-        print(Warning(f"Model directory {model_dir} does not exist. Creating it."))
-        model_dir.mkdir(parents=True, exist_ok=True)
+        if return_error:
+            raise FileNotFoundError(f"Model directory {model_dir} does not exist.")
+        else:
+            # Create the directory if it doesn't exist
+            # Print a warning message
+            print(Warning(f"Model directory {model_dir} does not exist. Creating it."))
+            model_dir.mkdir(parents=True, exist_ok=True)
 
     return model_dir
 
