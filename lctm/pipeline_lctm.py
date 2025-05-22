@@ -72,9 +72,6 @@ def pipeline_lctm(args: Namespace):
         'num_clauses': num_clauses_l,
         'T': T_l,
         'S': S_l,
-        'num_features': num_features,
-        'num_samples': num_samples,
-        'binarizer': str(binarizer),
         'min_samples_per_sub_pattern': min_samples_per_sub_pattern,
         'max_samples_per_sub_pattern': max_samples_per_sub_pattern,
         'pattern_search_perc': pattern_search_perc,
@@ -83,6 +80,9 @@ def pipeline_lctm(args: Namespace):
         'csv_path': csv_path,
         'num_samples': num_samples,
         'num_features': num_features,
+        'binarizer': str(binarizer),
+        'nb_batch_ids': data_prep.nb_batch_ids,
+        'columns_dropped': data_prep.columns_dropped,
     }
     save_results(res_path, 'hyperparameters.pkl', hyperparameters, text_printed='Hyperparameters')
     
