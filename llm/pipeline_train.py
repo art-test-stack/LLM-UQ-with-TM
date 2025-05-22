@@ -61,7 +61,7 @@ def train_llm_pipeline(rank, world_size, master_port, args):
     
     # Initialize the process group
     print("rank", rank)
-    if not args.no_cuda and (world_size > 1):
+    if not args.no_cuda:
         setup(rank, world_size, master_port)
     else:
         rank = get_device()

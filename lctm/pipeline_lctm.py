@@ -1,3 +1,4 @@
+from llm.utils import get_model_dir
 from tm_data.preprocessing import DataPreprocessor, Binarizer
 # from pyTsetlinMachine.tools import Binarizer
 from tmu.tsetlin_machine import LCTM
@@ -32,7 +33,24 @@ def save_results(res_path: Path, res_name: str, res: dict, text_printed: str = "
     return res
 
 def pipeline_lctm(args: Namespace):
-    csv_path = args.csv_path
+    # Load the storage directories
+    llm_name = args.model
+    llm_dir = get_model_dir(model_name=llm_name)
+    if not llm_dir.exists():
+        raise FileNotFoundError(f"Model directory does not exist. Please run the training first. Tried to find it at: {llm_dir}")
+    
+    csv_path = llm_dir.joinpath("fetched_batch_data.csv")
+    if not csv_path.exists():
+        raise FileNotFoundError(f"CSV file does not exist. Please run the training first. Tryied to find it at: {csv_path}")
+    
+    interpretability_cl_storage = llm_dir.joinpath("interpretability_clauses")
+    if not interpretability_cl_storage.exists():
+        interpretability_cl_storage.mkdir(parents=True, exist_ok=True)
+
+    res_path = create_dir(interpretability_cl_storage)
+    generate_res_name = lambda run, num_clauses, T, S: f"run_{run}_clauses_{num_clauses}_T_{T}_S_{S}.pkl"
+
+    # Create the grid for training
     num_clauses_l = [8]
     T_l = [5]
     S_l = [100]
@@ -44,18 +62,16 @@ def pipeline_lctm(args: Namespace):
     pattern_search_perc = 1.0 # percentage of all labels learning automata that must be rewarded together to accept their labels
     epsilon =0.8 # percentage of how likely to penalize a wrong labeled decided from an LA. leaving a window for exploration (1 - epsilon). If all LAs penalized at once for example, they will be in a loop due to the symetric nature of the issue.
 
-    interpretability_cl_storage = os.getenv("TM_INTER_CL")
+    
     # lctm_name = "example"
     # res_path = Path(interpretability_cl_storage) / lctm_name
     # if res_path.exists():
     #     res_path.mkdir(parents=True, exist_ok=True)
-    res_path = create_dir(interpretability_cl_storage)
 
     print("Result of interpretability clusters at:", str(res_path))
 
-    generate_res_name = lambda run, num_clauses, T, S: f"run_{run}_clauses_{num_clauses}_T_{T}_S_{S}.pkl"
 
-    
+    # Load the data
     binarizer = Binarizer(max_bits_per_feature=10)
 
     data_prep = DataPreprocessor(
@@ -68,6 +84,7 @@ def pipeline_lctm(args: Namespace):
 
     num_samples, num_features = X_train.shape
 
+    # Store the hyperparameters
     hyperparameters = {
         'num_clauses': num_clauses_l,
         'T': T_l,

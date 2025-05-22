@@ -9,8 +9,8 @@ if __name__=="__main__":
         epilog="Enjoy the program! :)",
     )
     
-    parser.add_argument('--csv_path', type=str, default="", metavar='PF',
-                        help='File containing the model training data')
+    parser.add_argument('--model', type=str, default="", metavar='PF',
+                        help='Model name to find it in model directory.')
     
     load_dotenv()
     args = parser.parse_args()
