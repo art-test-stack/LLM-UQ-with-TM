@@ -121,6 +121,7 @@ class DataPreprocessor:
             csv_path: str, 
             binarizer: Optional[Callable] = None,
             columns_to_drop: Optional[List[str]] = None,
+            drop_batch_ids: bool = False,
             verbose: bool = False,
         ):
         self.csv_path = csv_path
@@ -131,6 +132,7 @@ class DataPreprocessor:
         self.verbose = verbose
         self.nb_batch_ids = 0
         self.columns_dropped = []
+        self.drop_batch_ids = drop_batch_ids
         # self.binarizer = Binarizer(max_bits_per_feature=max_bits_per_feature)
 
     def _default_columns_to_drop(self):
@@ -154,15 +156,19 @@ class DataPreprocessor:
         # df.drop(df[df["epoch"].isin(epochs_to_remove)].index, inplace=True)
         # Drop columns with 'inf' values and print the columns dropped
         # One-hot encode 'batch_ids' column
+        is_batch_ids = False
 
-        if "batch_ids" in df.columns:
+        if "batch_ids" in df.columns and not self.drop_batch_ids:
             # Convert string representation of list to actual list
             df["batch_ids"] = df["batch_ids"].apply(lambda x: eval(x) if isinstance(x, str) else [])
             mlb = MultiLabelBinarizer()
             batch_ids_ohe = pd.DataFrame(mlb.fit_transform(df["batch_ids"]), columns=[f"batch_id_{cls}" for cls in mlb.classes_], index=df.index)
             self.nb_batch_ids = len(mlb.classes_)
             df.drop(columns=["batch_ids"], inplace=True)
-        else: nb_batch_ids = 0
+            is_batch_ids = True
+
+        else: 
+            self.nb_batch_ids = 0
         for col in self.columns_to_drop:
             if col in df.columns:
                 df.drop(columns=col, inplace=True)
@@ -176,7 +182,7 @@ class DataPreprocessor:
         X = df.to_numpy(copy=True)
         if max_id is not None:
             X = X[:max_id,:]
-            if "batch_ids" in df.columns:
+            if is_batch_ids:
                 batch_ids_ohe = batch_ids_ohe[:max_id]
 
         print("X.shape", X.shape)
@@ -190,7 +196,7 @@ class DataPreprocessor:
         else:
             X_train = X
         
-        if "batch_ids" in df.columns:
+        if is_batch_ids:
             X_train = np.concat([batch_ids_ohe.to_numpy(), X_train], axis=1)
 
         print("X_train.shape", X_train.shape)
