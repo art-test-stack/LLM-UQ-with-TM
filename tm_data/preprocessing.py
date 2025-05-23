@@ -10,7 +10,7 @@ class Binarizer(TmBinarizer):
     def __repr__(self):
         return f"Binarizer(max_bits_per_feature={self.max_bits_per_feature})"
 
-class MaxThresholdBinarizer:
+class MaxThresholdBinarizer(TmBinarizer):
     def __repr__(self):
         return f"MaxThresholdBinarizer(max_bits_per_feature={self.max_bits_per_feature})"
     
@@ -79,63 +79,36 @@ class AugmentedBinarizer:
 
         return X_transformed
 
-      
-# def preprocess_tm_data(
-#         csv_path: str, 
-#         binarize: bool = True, 
-#         max_bits_per_feature: int = 10, 
-#         max_id: int = None, 
-#         return_columns: bool = False,
-#         columns_to_drop: List[str] = None
-#     ) -> np.ndarray:
-#     print("csv_path", csv_path)
-#     df = pd.read_csv(csv_path)
-#     # df.drop(columns=["batch_size"], inplace=True)
-#     # epochs_to_remove = [0]
-#     print("df.columns", df.columns)
+import numpy as np
+import hashlib
 
-#     df = df.iloc[1:]
-#     # df.drop(df[df["epoch"].isin(epochs_to_remove)].index, inplace=True)
-#     # Drop columns with 'inf' values and print the columns dropped
-#     # One-hot encode 'batch_ids' column
+def hash_id(id_val, num_bins):
+    """Hash function for a single integer ID into [0, num_bins)."""
+    h = hashlib.md5(str(id_val).encode()).hexdigest()
+    return int(h, 16) % num_bins
 
-#     if "batch_ids" in df.columns:
-#         # Convert string representation of list to actual list
-#         df["batch_ids"] = df["batch_ids"].apply(lambda x: eval(x) if isinstance(x, str) else [])
-#         mlb = MultiLabelBinarizer()
-#         batch_ids_ohe = pd.DataFrame(mlb.fit_transform(df["batch_ids"]), columns=[f"batch_id_{cls}" for cls in mlb.classes_], index=df.index)
+def reduce_id_features(X_ids, num_bins):
+    """
+    Reduce the multi-hot ID part of X using feature hashing.
     
-#     df.drop(columns=columns_to_drop, inplace=True)
-        
-#     cols_with_inf = df.columns[df.isin([np.inf, -np.inf]).any()].tolist()
-#     if cols_with_inf:
-#         print("Columns with 'inf' values dropped:", cols_with_inf)
-#         df.drop(columns=cols_with_inf, inplace=True)
-#     columns = df.columns
-#     X = df.to_numpy(copy=True)
-#     if max_id is not None:
-#         X = X[:max_id,:]
-#         batch_ids_ohe = batch_ids_ohe[:max_id]
+    Parameters:
+    - X_ids: shape (n_samples, n_ids), binary matrix where each row is a multi-hot ID vector
+    - num_bins: target dimensionality for reduced ID space
 
-#     print("X.shape", X.shape)
+    Returns:
+    - X_ids_hashed: shape (n_samples, num_bins), hashed binary matrix
+    """
+    n_samples, n_ids = X_ids.shape
+    X_hashed = np.zeros((n_samples, num_bins), dtype=np.uint8)
 
-#     if binarize:
-#         # Check if the data is already binarized
-#         b = Binarizer(max_bits_per_feature = max_bits_per_feature)
-#         b.fit(X)
-#         X_train = b.transform(X)
-#         X_train = X_train.astype(np.int8)
-#     else:
-#         X_train = X
+    for i in range(n_samples):
+        active_ids = np.nonzero(X_ids[i])[0]  # Get indices of 1s (active IDs)
+        for idx in active_ids:
+            bin_idx = hash_id(idx, num_bins)
+            X_hashed[i, bin_idx] = 1  # Set hashed bin to 1
     
-#     X_train = np.concat([batch_ids_ohe.to_numpy(), X_train], axis=1)
+    return X_hashed
 
-#     print("X_train.shape", X_train.shape)
-#     if return_columns:
-#         return X_train, columns
-#     else:
-#         return X_train
-    
 class DataPreprocessor:
     def __init__(
             self, 
@@ -143,6 +116,8 @@ class DataPreprocessor:
             binarizer: Optional[Callable] = None,
             columns_to_drop: Optional[List[str]] = None,
             drop_batch_ids: bool = False,
+            retrieve_mhe_batch_ids: bool = False,
+            hash_batch_ids: bool = False,
             verbose: bool = False,
         ):
         self.csv_path = csv_path
@@ -154,6 +129,8 @@ class DataPreprocessor:
         self.nb_batch_ids = 0
         self.columns_dropped = []
         self.drop_batch_ids = drop_batch_ids
+        self.hash_batch_ids = hash_batch_ids
+        self.retrieve_mhe_batch_ids = retrieve_mhe_batch_ids
         # self.binarizer = Binarizer(max_bits_per_feature=max_bits_per_feature)
 
     def _default_columns_to_drop(self):
@@ -179,14 +156,18 @@ class DataPreprocessor:
         # One-hot encode 'batch_ids' column
         is_batch_ids = False
 
-        if ("batch_ids" in df.columns) and (not self.drop_batch_ids) and self.binarizer:
+        if (("batch_ids" in df.columns) and (not self.drop_batch_ids) and self.binarizer) or (("batch_ids" in df.columns) and self.retrieve_mhe_batch_ids):
             # Convert string representation of list to actual list
             df["batch_ids"] = df["batch_ids"].apply(lambda x: eval(x) if isinstance(x, str) else [])
             mlb = MultiLabelBinarizer()
-            batch_ids_ohe = pd.DataFrame(mlb.fit_transform(df["batch_ids"]), columns=[f"batch_id_{cls}" for cls in mlb.classes_], index=df.index).to_numpy().astype(np.int8)
+            # Multi-hot encode the 'batch_ids' column
+            batch_ids_mhe = pd.DataFrame(mlb.fit_transform(df["batch_ids"]), columns=[f"batch_id_{cls}" for cls in mlb.classes_], index=df.index).to_numpy().astype(np.int8)
             self.nb_batch_ids = len(mlb.classes_)
             df.drop(columns=["batch_ids"], inplace=True)
             is_batch_ids = True
+            if self.hash_batch_ids:
+                num_bins = 256 # Set the number of bins for hashing
+                batch_ids_mhe = reduce_id_features(batch_ids_mhe, num_bins)
 
         else: 
             self.nb_batch_ids = 0
@@ -204,8 +185,8 @@ class DataPreprocessor:
         X = df.to_numpy(copy=True)
         if max_id is not None:
             X = X[:max_id,:]
-            if is_batch_ids:
-                batch_ids_ohe = batch_ids_ohe[:max_id]
+            if is_batch_ids or self.retrieve_mhe_batch_ids:
+                batch_ids_mhe = batch_ids_mhe[:max_id]
 
         print("X.shape", X.shape)
 
@@ -219,11 +200,15 @@ class DataPreprocessor:
             X_train = pd.DataFrame(X, columns=columns)
         
         if is_batch_ids:
-            X_train = np.concatenate([batch_ids_ohe, X_train], axis=1)
+            X_train = np.concatenate([batch_ids_mhe, X_train], axis=1)
 
         print("X_train.shape", X_train.shape)
-        if return_columns:
+        if return_columns and self.retrieve_mhe_batch_ids:
+            return X_train, columns, batch_ids_mhe
+        elif return_columns:
             return X_train, columns
+        elif self.retrieve_mhe_batch_ids:
+            return X_train, batch_ids_mhe
         else:
             return X_train
     

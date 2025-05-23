@@ -112,6 +112,8 @@ def pipeline_lctm(args: Namespace):
         'nb_batch_ids': data_prep.nb_batch_ids,
         'columns_dropped': data_prep.columns_dropped,
         'drop_batch_ids': data_prep.drop_batch_ids,
+        'hash_batch_ids': data_prep.hash_batch_ids,
+        'retrieve_mhe_batch_ids': data_prep.retrieve_mhe_batch_ids,
     }
     save_results(res_path, 'hyperparameters.pkl', hyperparameters, text_printed='Hyperparameters')
     
