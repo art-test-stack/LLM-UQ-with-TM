@@ -12,7 +12,7 @@ if __name__=="__main__":
     parser.add_argument('--model', type=str, default="", metavar='PF',
                         help='Model name to find it in model directory.')
     parser.add_argument('--binarizer', type=str, default="default", metavar='PF',)
-    
+    parser.add_argument('--hash_batch_ids', action='store_true', default=False)
     load_dotenv()
     args = parser.parse_args()
     pipeline_lctm(args=args)
