@@ -10,6 +10,27 @@ class Binarizer(TmBinarizer):
     def __repr__(self):
         return f"Binarizer(max_bits_per_feature={self.max_bits_per_feature})"
 
+class MaxThresholdBinarizer:
+    def __repr__(self):
+        return f"MaxThresholdBinarizer(max_bits_per_feature={self.max_bits_per_feature})"
+    
+    def transform(self, X):
+        X_transformed = np.zeros((X.shape[0], self.number_of_features))
+        pos = 0
+        for i in range(X.shape[1]):
+            thresholds = self.unique_values[i]
+            for row in range(X.shape[0]):
+                value = X[row, i]
+                max_idx = -1
+                for j, threshold in enumerate(thresholds):
+                    if value >= threshold:
+                        max_idx = j
+                if max_idx >= 0:
+                    X_transformed[row, pos + max_idx] = 1
+            pos += thresholds.size
+
+        return X_transformed
+
 class AugmentedBinarizer:
     def __init__(self, max_bits_per_feature=2):
         self.max_bits_per_feature = max_bits_per_feature

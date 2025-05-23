@@ -1,5 +1,5 @@
 from llm.utils import get_model_dir
-from tm_data.preprocessing import DataPreprocessor, Binarizer
+from tm_data.preprocessing import DataPreprocessor, Binarizer, MaxThresholdBinarizer, AugmentedBinarizer
 # from pyTsetlinMachine.tools import Binarizer
 from tmu.tsetlin_machine import LCTM
 
@@ -35,6 +35,8 @@ def save_results(res_path: Path, res_name: str, res: dict, text_printed: str = "
 def pipeline_lctm(args: Namespace):
     # Load the storage directories
     llm_name = args.model
+    binarizer = args.binarizer
+
     llm_dir = get_model_dir(model_name=llm_name)
     if not llm_dir.exists():
         raise FileNotFoundError(f"Model directory does not exist. Please run the training first. Tried to find it at: {llm_dir}")
@@ -72,7 +74,12 @@ def pipeline_lctm(args: Namespace):
 
 
     # Load the data
-    binarizer = Binarizer(max_bits_per_feature=10)
+    BinarizerCls = {
+        "default": Binarizer,
+        "max": MaxThresholdBinarizer,
+        "augmented": AugmentedBinarizer,
+    }
+    binarizer = BinarizerCls(max_bits_per_feature=max_bits_per_feature)
 
     data_prep = DataPreprocessor(
         csv_path=csv_path,

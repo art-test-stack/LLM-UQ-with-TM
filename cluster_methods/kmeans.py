@@ -130,13 +130,30 @@ for n_clusters in range_n_clusters:
 plt.show()
 
 class KMeansGridCluster(ClusterBase):
-    def __init__(self, range_n_clusters=[2, 3, 4, 5], columns=None):
-        self.n_clusters = n_clusters
-        self.kmeans = KMeans(n_clusters=self.n_clusters)
+    def __init__(self, range_clusters=[2, 3, 4, 5], columns=None):
+        self.range_n_clusters = range_clusters
+
+        self.kmeans = { n_clusters: KMeans(n_clusters=n_clusters) for n_clusters in range_clusters }
         self.columns = columns
         self.trained = False
 
-    def fit(self, X):
-        self.kmeans.fit(X)
+    def fit(self, X, verbose=True):
+        if self.trained:
+            raise ValueError("Already trained. Please reset the model before fitting again.")
+        
+        res = [ self.kmeans[n_clusters].fit(X) for n_clusters in self.range_n_clusters ]
+        scores = [silhouette_score(X, model.labels_) for model in res]
+        best_idx = np.argmax(scores)
+        self.kmeans = res[best_idx]
         self.trained = True
-        return self.kmeans.labels_
+        self.benchmark = {
+            n_clusters: {
+                "model": model,
+                "silhouette_score": score
+            }
+            for n_clusters, model, score in zip(self.range_n_clusters, res, scores)
+        }
+        self.best_n_clusters = self.range_n_clusters[best_idx]
+        return self.kmeans, self.benchmark
+
+
