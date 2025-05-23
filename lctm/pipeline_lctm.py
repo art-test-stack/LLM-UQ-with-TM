@@ -79,7 +79,7 @@ def pipeline_lctm(args: Namespace):
         "default": Binarizer,
         "max": MaxThresholdBinarizer,
         "augmented": AugmentedBinarizer,
-    }
+    }[binarizer]
     binarizer = BinarizerCls(max_bits_per_feature=max_bits_per_feature)
 
     data_prep = DataPreprocessor(
