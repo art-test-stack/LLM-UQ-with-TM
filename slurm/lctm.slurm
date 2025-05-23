@@ -47,7 +47,7 @@ nvcc --version
 # cd labelcritic_tm/
 # pip install .
 # python examples/synthetic_lctm.py
-python main_lctm_train.py --model=${MODEL}
+python main_lctm_train.py --model=${MODEL} --binarizer=${BINARIZER}
 # # cd ../
 # # pip install nvidia-pyindex
 # # pip install nvidia-cuda-nvcc
