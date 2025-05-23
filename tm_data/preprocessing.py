@@ -162,7 +162,7 @@ class DataPreprocessor:
             # Convert string representation of list to actual list
             df["batch_ids"] = df["batch_ids"].apply(lambda x: eval(x) if isinstance(x, str) else [])
             mlb = MultiLabelBinarizer()
-            batch_ids_ohe = pd.DataFrame(mlb.fit_transform(df["batch_ids"]), columns=[f"batch_id_{cls}" for cls in mlb.classes_], index=df.index)
+            batch_ids_ohe = pd.DataFrame(mlb.fit_transform(df["batch_ids"]), columns=[f"batch_id_{cls}" for cls in mlb.classes_], index=df.index).to_numpy().astype(np.int8)
             self.nb_batch_ids = len(mlb.classes_)
             df.drop(columns=["batch_ids"], inplace=True)
             is_batch_ids = True
@@ -178,6 +178,7 @@ class DataPreprocessor:
         if cols_with_inf:
             print("Columns with 'inf' values dropped:", cols_with_inf)
             df.drop(columns=cols_with_inf, inplace=True)
+            self.columns_dropped += cols_with_inf
         columns = df.columns
         X = df.to_numpy(copy=True)
         if max_id is not None:
@@ -197,7 +198,7 @@ class DataPreprocessor:
             X_train = pd.DataFrame(X, columns=columns)
         
         if is_batch_ids:
-            X_train = np.concat([batch_ids_ohe.to_numpy(), X_train], axis=1)
+            X_train = np.concatenate([batch_ids_ohe, X_train], axis=1)
 
         print("X_train.shape", X_train.shape)
         if return_columns:

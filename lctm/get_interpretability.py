@@ -52,7 +52,7 @@ class LCTMResults:
         Initialize the iterator.
         """
         self.init_current_example()
-        return self
+        return self.current_res
     
     def __next__(self):
         """
@@ -67,6 +67,7 @@ class LCTMResults:
             verbose=self.verbose, 
             plot_titles=self.plot_titles
         )
+        return self.current_res
 
     def init_current_example(self):
         """
@@ -76,7 +77,8 @@ class LCTMResults:
         self.current_folder = self.interpretability_clauses_dir.joinpath("example")
         if not self.current_folder.exists():
             raise FileNotFoundError(f"Interpretability clauses directory does not exist at: {self.current_folder}.")
-        return self.get_current_example()
+        self.get_current_example()
+        return self.current_res
 
     def next_example(self):
         """
@@ -107,9 +109,10 @@ class LCTMCurrentResults:
         self.max_runs = len(self.runs)
         self.data_folder = data_folder
         self.plot_titles = plot_titles
-
-        hp_file = data_folder.joinpath("hyperparameters.pkl") if data_folder.joinpath("hyperparameters.pkl").exists() else data_folder.parent.parent.joinpath("default_hyperparameters.pkl")
-        
+        # print(f"Data folder: {self.data_folder}")
+        print(f"Current folder: {folder}")
+        hp_file = folder.joinpath("hyperparameters.pkl") if folder.joinpath("hyperparameters.pkl").exists() else data_folder.parent.parent.joinpath("default_hyperparameters.pkl")
+        print(f"Hyperparameters file: {hp_file}")
         with open(hp_file, 'rb') as file:
             self.hyperparameters = pickle.load(file)
 
@@ -127,7 +130,6 @@ class LCTMCurrentResults:
         )
         self.data, self.columns = data_preprocesor.fit_transform(max_id=self.hyperparameters["num_samples"], return_columns=True)
         self.batch_ids = data_preprocesor.nb_batch_ids
-
         data_preprocesor = DataPreprocessor(
             csv_path=self.data_folder,
             binarizer=None,
@@ -150,10 +152,13 @@ class LCTMCurrentResults:
             self.binarizer = AugmentedBinarizer(max_bits_per_feature=max_bits)
         else:
             raise ValueError(f"Unknown binarizer type: {binarizer_repr}")
+        
+        if "max_bits_per_feature" not in self.hyperparameters:
+            self.hyperparameters["max_bits_per_feature"] = self.binarizer.max_bits_per_feature
         assert self.hyperparameters["max_bits_per_feature"] == self.binarizer.max_bits_per_feature, f"Hyperparameters and binarizer max_bits_per_feature do not match. Got: {self.hyperparameters['max_bits_per_feature']} and {self.binarizer.max_bits_per_feature}"
     
     def __repr__(self):
-        return f"LCTMSubResults('{self.run}')"
+        return f"LCTMCurrentResults('{self.run}')"
     
     def __iter__(self):
         self.current_res = LCTMResult(path=self.run, data=self.data, hyperparameters=self.hyperparameters, verbose=self.verbose)
@@ -164,7 +169,6 @@ class LCTMCurrentResults:
         self.current += 1
         self.run = self.runs[self.current]
         # self.run = self.runs[self.current - 1]
-        print(f"Current example: {self.run}")
         self.current_res = LCTMResult(self.run, self.data, self.hyperparameters, verbose=self.verbose)
         return self.current_res
     
@@ -175,10 +179,11 @@ class LCTMCurrentResults:
         else:
             data = self.data
         max_bits_per_feature = self.hyperparameters["max_bits_per_feature"]
-        assert data.shape[1] % max_bits_per_feature == 0, f"The number of features binarized should be a multiple of max_bits_per_feature value. Got: {data.shape[1]} and {max_bits_per_feature}"
-        nb_features = data.shape[1] // max_bits_per_feature
+        nb_batch_ids = self.hyperparameters["nb_batch_ids"]
+        assert (data.shape[1] - nb_batch_ids) % max_bits_per_feature == 0, f"The number of features binarized should be a multiple of max_bits_per_feature value. Got: {data.shape[1] - nb_batch_ids} and {max_bits_per_feature}"
+        nb_features = (data.shape[1] - nb_batch_ids) // max_bits_per_feature
         for feature in range(nb_features):
-            x = data[:,feature * max_bits_per_feature:(feature + 1) * max_bits_per_feature]
+            x = data[:,feature * max_bits_per_feature + nb_batch_ids:(feature + 1) * max_bits_per_feature + nb_batch_ids]
             x_t = np.sum(x, axis=1, keepdims=True)
             # x_t = np.argmax(1 - x, axis=1, keepdims=True)
             X_t.append(x_t)
@@ -201,6 +206,24 @@ class LCTMCurrentResults:
             print(f"Scatter plot of class {c_id} on run {self.run}")
             plt.xlabel("Features")
             plt.ylabel("Thresholds")
+            plt.show()
+
+    def plot_threshold_features(self, with_features_colors=False):
+        data = self.get_max_threshold_by_feature()
+        for c_id, idx in self.current_res.ids_by_class.items():
+            plt.figure(figsize=(15, 9))
+            labels = list(self.columns)
+            y = np.arange(data.shape[1])
+            plt.yticks(y, labels, rotation=0)
+            if with_features_colors:
+                for i in range(data.shape[1]):
+                    plt.scatter(data[idx, i], [i] * len(idx), label=labels[i] if i < len(labels) else f"Feature {i}")
+            else:
+                for i in range(data.shape[1]):
+                    plt.scatter(data[idx, i], [i] * len(idx))
+            print(f"Scatter plot of thresholds by feature for class {c_id} on run {self.run}")
+            plt.ylabel("Features")
+            plt.xlabel("Thresholds")
             plt.show()
 
     def plot_clauses_matrix(self):
@@ -236,8 +259,8 @@ class LCTMCurrentResults:
                 bounds = [-1.5, -0.5, 0.5, 1.5]
                 norm = BoundaryNorm(bounds, cmap.N)
                 plt.imshow(matrix, aspect='auto', cmap=cmap, norm=norm)
-                plt.ylabel("Bits per Feature")
-                plt.xlabel("Features")
+                plt.ylabel("Features")
+                plt.xlabel("Thresholds")
                 plt.title(f"Class {c_id} - Clause {clause_idx}")
                 plt.colorbar(ticks=[-1, 0, 1], label='Literal', format=lambda x, _: {1: 'x_i', 0: 'None', -1: '¬x_i'}.get(x, ''))
                 plt.yticks(np.arange(num_features), self.columns)
