@@ -36,6 +36,7 @@ def pipeline_lctm(args: Namespace):
     # Load the storage directories
     llm_name = args.model
     binarizer = args.binarizer
+    hash_batch_ids = args.hash_batch_ids
 
     llm_dir = get_model_dir(model_name=llm_name)
     if not llm_dir.exists():
@@ -85,6 +86,8 @@ def pipeline_lctm(args: Namespace):
     data_prep = DataPreprocessor(
         csv_path=csv_path,
         binarizer=binarizer,
+        drop_batch_ids=True,
+        hash_batch_ids=hash_batch_ids,
         columns_to_drop=[],
         verbose=True,
     )
@@ -92,8 +95,8 @@ def pipeline_lctm(args: Namespace):
 
     num_samples, num_features = X_train.shape
 
-    permutation = np.random.permutation(X_train.shape[1])
-    X_train = X_train[:, permutation]
+    permutation = np.random.permutation(X_train.shape[0])
+    X_train = X_train[permutation, :]
     # Store the hyperparameters
     hyperparameters = {
         'num_clauses': num_clauses_l,
@@ -113,7 +116,6 @@ def pipeline_lctm(args: Namespace):
         'columns_dropped': data_prep.columns_dropped,
         'drop_batch_ids': data_prep.drop_batch_ids,
         'hash_batch_ids': data_prep.hash_batch_ids,
-        'retrieve_mhe_batch_ids': data_prep.retrieve_mhe_batch_ids,
     }
     save_results(res_path, 'hyperparameters.pkl', hyperparameters, text_printed='Hyperparameters')
     

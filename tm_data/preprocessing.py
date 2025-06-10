@@ -149,7 +149,7 @@ def reduce_id_features(X_ids, num_bins):
             bin_idx = hash_id(idx, num_bins)
             X_hashed[i, bin_idx] = 1  # Set hashed bin to 1
     
-    return X_hashed
+    return X_hashed.astype(np.int8)
 
 class DataPreprocessor:
     def __init__(
@@ -158,7 +158,7 @@ class DataPreprocessor:
             binarizer: Optional[Callable] = None,
             columns_to_drop: Optional[List[str]] = None,
             drop_batch_ids: bool = False,
-            retrieve_mhe_batch_ids: bool = False,
+            retrieve_mhe_batch_ids: bool = False, # Should be False for LCTM training but True for LCTM testing
             hash_batch_ids: bool = False,
             verbose: bool = False,
         ):

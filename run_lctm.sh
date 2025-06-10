@@ -2,24 +2,32 @@
 
 # Default values
 BINARIZER='default'
+HASH_BATCH_ID='False'
 
 # Parse arguments
-while getopts "m:b:" opt; do
+while getopts "m:b:h" opt; do
     case $opt in
         m) MODEL="$OPTARG" ;;
         b) BINARIZER="$OPTARG" ;;
-        *) echo "Usage: $0 -m <model> [-b <binarizer>]"; exit 1 ;;
+        h) HASH_BATCH_ID='True' ;;
+        *) echo "Usage: $0 -m <model> [-b <binarizer>] [-h]"; exit 1 ;;
     esac
 done
 
 # Check required argument
 if [ -z "$MODEL" ]; then
     echo "Error: -m <model> is required."
-    echo "Usage: $0 -m <model> [-b <binarizer>]"
+    echo "Usage: $0 -m <model> [-b <binarizer>] [-h]"
     exit 1
 fi
 
-source .env && sbatch --job-name=$TM_JOB_NAME.$MODEL \
+if [ "$HASH_BATCH_ID" = "True" ]; then
+    JOB_NAME="hash.${TM_JOB_NAME}.${MODEL}.${BINARIZER}"
+else
+    JOB_NAME="${TM_JOB_NAME}.${MODEL}.${BINARIZER}"
+fi
+
+source .env && sbatch --job-name=$JOB_NAME \
     --account=$ACCOUNT \
     --partition=$TM_PARTITION \
     --time=$TM_TIMEOUT \
@@ -29,6 +37,6 @@ source .env && sbatch --job-name=$TM_JOB_NAME.$MODEL \
     --gres=$TM_GRES \
     --constraint=$TM_CONSTRAINT \
     --mem=$TM_MEM \
-    --output=$OUTPUT_DIR/$TM_JOB_NAME.$MODEL.txt \
-    --export=ENV_DIR=$ENV_DIR,MODEL=$MODEL,BINARIZER=$BINARIZER \
+    --output=$OUTPUT_DIR/$JOB_NAME.txt \
+    --export=ENV_DIR=$ENV_DIR,MODEL=$MODEL,BINARIZER=$BINARIZER,HASH_BATCH_ID=$HASH_BATCH_ID \
     slurm/lctm.slurm
