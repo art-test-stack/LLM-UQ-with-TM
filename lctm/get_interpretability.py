@@ -176,12 +176,15 @@ class LCTMCurrentResults:
 
         if binarizer_repr.startswith('Binarizer('):
             binarizer_cls = Binarizer
+            self.binarizer_repr = "Binarizer"
 
         elif binarizer_repr.startswith('AugmentedBinarizer('):
             binarizer_cls = AugmentedBinarizer
+            self.binarizer_repr = "AugmentedBinarizer"
 
         elif binarizer_repr.startswith('MaxThresholdBinarizer('):
             binarizer_cls = MaxThresholdBinarizer
+            self.binarizer_repr = "MaxThresholdBinarizer"
 
         else:
             raise ValueError(f"Unknown binarizer type: {binarizer_repr}")
@@ -231,6 +234,7 @@ class LCTMCurrentResults:
             X_t.append(x_t)
         X_t = np.concat(X_t, axis=1)
         return X_t 
+    
  
     def plot_features_threshold(self, with_features_colors=False):
         data = self.get_max_threshold_by_feature()

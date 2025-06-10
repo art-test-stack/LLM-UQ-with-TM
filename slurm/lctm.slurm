@@ -25,7 +25,7 @@ pwd
 nvcc --version
 
 if [ "$HASH_BATCH_ID" = true ]; then
-    python main_lctm_train.py --model=${MODEL} --binarizer=${BINARIZER} --store_flag
+    python main_lctm_train.py --model=${MODEL} --binarizer=${BINARIZER} --hash_batch_id
 else
     python main_lctm_train.py --model=${MODEL} --binarizer=${BINARIZER}
 fi

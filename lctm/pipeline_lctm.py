@@ -86,6 +86,7 @@ def pipeline_lctm(args: Namespace):
     data_prep = DataPreprocessor(
         csv_path=csv_path,
         binarizer=binarizer,
+        drop_batch_ids=True,
         hash_batch_ids=hash_batch_ids,
         columns_to_drop=[],
         verbose=True,
@@ -94,8 +95,8 @@ def pipeline_lctm(args: Namespace):
 
     num_samples, num_features = X_train.shape
 
-    permutation = np.random.permutation(X_train.shape[1])
-    X_train = X_train[:, permutation]
+    permutation = np.random.permutation(X_train.shape[0])
+    X_train = X_train[permutation, :]
     # Store the hyperparameters
     hyperparameters = {
         'num_clauses': num_clauses_l,

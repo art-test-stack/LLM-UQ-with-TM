@@ -22,9 +22,9 @@ if [ -z "$MODEL" ]; then
 fi
 
 if [ "$HASH_BATCH_ID" = "True" ]; then
-    JOB_NAME="${TM_JOB_NAME}.hash.${MODEL}"
+    JOB_NAME="hash.${TM_JOB_NAME}.${MODEL}.${BINARIZER}"
 else
-    JOB_NAME="${TM_JOB_NAME}.${MODEL}"
+    JOB_NAME="${TM_JOB_NAME}.${MODEL}.${BINARIZER}"
 fi
 
 source .env && sbatch --job-name=$JOB_NAME \
