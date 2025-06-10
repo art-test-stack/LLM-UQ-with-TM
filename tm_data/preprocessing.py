@@ -79,7 +79,49 @@ class AugmentedBinarizer:
 
         return X_transformed
 
-import numpy as np
+class RollingBinarizer:
+    def __init__(self, window_size=10, max_bits_per_feature=25):
+        self.window_size = window_size
+        self.max_bits_per_feature = max_bits_per_feature
+        self.thresholds_per_feature = []
+
+    def fit(self, X):
+        X = np.asarray(X)
+        n_samples, n_features = X.shape
+        self.thresholds_per_feature = []
+
+        for feature_idx in range(n_features):
+            thresholds = []
+
+            for i in range(n_samples):
+                start = max(0, i - self.window_size + 1)
+                window = X[start:i+1, feature_idx]
+                if window.size == 0:
+                    continue
+
+                quantiles = np.linspace(0, 1, self.max_bits_per_feature + 2)[1:-1]
+                thresholds.extend(np.quantile(window, quantiles))
+
+            unique_thresholds = np.unique(thresholds)
+            self.thresholds_per_feature.append(unique_thresholds)
+
+    def transform(self, X):
+        X = np.asarray(X)
+        n_samples, n_features = X.shape
+
+        total_output_dim = sum(len(t) for t in self.thresholds_per_feature)
+        X_transformed = np.zeros((n_samples, total_output_dim))
+
+        pos = 0
+        for feature_idx in range(n_features):
+            thresholds = self.thresholds_per_feature[feature_idx]
+            for threshold in thresholds:
+                X_transformed[:, pos] = (X[:, feature_idx] >= threshold).astype(int)
+                pos += 1
+
+        return X_transformed
+
+
 import hashlib
 
 def hash_id(id_val, num_bins):
@@ -148,7 +190,8 @@ class DataPreprocessor:
             return_columns: bool = False,
             fit: bool = False,
         ):
-        print("df.columns", df.columns)
+        if self.verbose:
+            print("df.columns", df.columns)
 
         # df = df.iloc[1:]
         # df.drop(df[df["epoch"].isin(epochs_to_remove)].index, inplace=True)
@@ -165,9 +208,6 @@ class DataPreprocessor:
             self.nb_batch_ids = len(mlb.classes_)
             df.drop(columns=["batch_ids"], inplace=True)
             is_batch_ids = True
-            if self.hash_batch_ids:
-                num_bins = 256 # Set the number of bins for hashing
-                batch_ids_mhe = reduce_id_features(batch_ids_mhe, num_bins)
 
         else: 
             self.nb_batch_ids = 0
@@ -178,7 +218,8 @@ class DataPreprocessor:
             
         cols_with_inf = df.columns[df.isin([np.inf, -np.inf]).any()].tolist()
         if cols_with_inf:
-            print("Columns with 'inf' values dropped:", cols_with_inf)
+            if self.verbose:
+                print("Columns with 'inf' values dropped:", cols_with_inf)
             df.drop(columns=cols_with_inf, inplace=True)
             self.columns_dropped += cols_with_inf
         columns = df.columns
@@ -187,8 +228,8 @@ class DataPreprocessor:
             X = X[:max_id,:]
             if is_batch_ids or self.retrieve_mhe_batch_ids:
                 batch_ids_mhe = batch_ids_mhe[:max_id]
-
-        print("X.shape", X.shape)
+        if self.verbose:
+            print("X.shape", X.shape)
 
         if self.binarizer:
             # Check if the data is already binarized
@@ -199,10 +240,16 @@ class DataPreprocessor:
         else:
             X_train = pd.DataFrame(X, columns=columns)
         
-        if is_batch_ids:
-            X_train = np.concatenate([batch_ids_mhe, X_train], axis=1)
+        if is_batch_ids and not self.drop_batch_ids:
+            if self.hash_batch_ids:
+                num_bins = 256 # Set the number of bins for hashing
+                hashed_batch_ids = reduce_id_features(batch_ids_mhe, num_bins)
+                X_train = np.concatenate([hashed_batch_ids, X_train], axis=1)
+            else:
+                X_train = np.concatenate([batch_ids_mhe, X_train], axis=1)
 
-        print("X_train.shape", X_train.shape)
+        if self.verbose:
+            print("X_train.shape", X_train.shape)
         if return_columns and self.retrieve_mhe_batch_ids:
             return X_train, columns, batch_ids_mhe
         elif return_columns:

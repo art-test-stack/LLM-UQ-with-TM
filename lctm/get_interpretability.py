@@ -5,7 +5,7 @@ import datasets
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
-from typing import Union, Optional
+from typing import Union, Optional, Dict
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from pathlib import Path
 from enum import Enum
@@ -62,6 +62,35 @@ class LCTMResults:
         """
         return self.next_example()
     
+    def has_next(self):
+        """
+        Check if there is a next example.
+        """
+        return self.current_example + 1 <= self.num_folders
+    
+    def __len__(self):
+        """
+        Get the number of examples.
+        """
+        return self.num_folders
+    
+    def __getitem__(self, idx):
+        """
+        Get the example at index idx.
+        """
+        if idx < 0 or idx >= self.num_folders:
+            raise IndexError("Index out of range.")
+        self.current_example = idx
+        if self.current_example == 0:
+            self.current_folder = self.interpretability_clauses_dir.joinpath("example")
+        else:
+            self.current_folder = self.interpretability_clauses_dir.joinpath(f"example_{self.current_example}")
+        if not self.current_folder.exists():
+            raise FileNotFoundError(f"Interpretability clauses directory does not exist at: {self.current_folder}.")
+        if self.verbose:
+            print(f"Current folder: {self.current_folder}")
+        return self.get_current_example()
+    
     def get_current_example(self):
         self.current_res = LCTMCurrentResults(
             folder=self.current_folder, 
@@ -92,8 +121,9 @@ class LCTMResults:
         self.current_example += 1
         
         self.current_folder = self.interpretability_clauses_dir.joinpath(f"example_{self.current_example}")
-        print(f"Current folder: {self.current_folder}")
-        print(f"Data folder: {self.data_folder}")
+        if self.verbose:
+            print(f"Current folder: {self.current_folder}")
+            print(f"Data folder: {self.data_folder}")
         self.get_current_example()
         return self.current_res
     
@@ -106,18 +136,27 @@ class LCTMCurrentResults:
         self.runs = [ f for f in folder.iterdir() if f.is_file() and "run_" in f.name ]
 
         self.verbose = verbose
-        self.run = self.runs[0]
+        if len(self.runs) > 0:
+            self.run = self.runs[0] 
+        else:
+            print(f"No runs found in {folder}.")
+            self.run = None
+            return None
         self.current = 0
         self.max_runs = len(self.runs)
         self.model_dir = model_dir
         self.plot_titles = plot_titles
         # print(f"Data folder: {self.data_folder}")
-        print(f"Current folder: {folder}")
         hp_file = folder.joinpath("hyperparameters.pkl") if folder.joinpath("hyperparameters.pkl").exists() else model_dir.parent.joinpath("default_hyperparameters.pkl")
-        print(f"Hyperparameters file: {hp_file}")
+        
         with open(hp_file, 'rb') as file:
-            self.hyperparameters = pickle.load(file)
-        print(f"Hyperparameters: {self.hyperparameters}")
+            self.hyperparameters: Dict = pickle.load(file)
+        
+        if self.verbose:
+            print(f"Current folder: {folder}")
+            print(f"Hyperparameters file: {hp_file}")
+            print(f"Hyperparameters: {self.hyperparameters}")
+        self.hyperparameters["drop_batch_ids"] = self.hyperparameters.get("drop_batch_ids", False)
         if self.hyperparameters["drop_batch_ids"] or self.hyperparameters["nb_batch_ids"] > 0:
             self.data_folder = self.model_dir.joinpath("fetched_batch_data.csv")
         else:
@@ -134,10 +173,12 @@ class LCTMCurrentResults:
             binarizer=self.binarizer,
             columns_to_drop=self.hyperparameters["columns_dropped"],
             drop_batch_ids=self.hyperparameters["drop_batch_ids"],
-            verbose=True,
+            hash_batch_ids=self.hyperparameters.get("hash_batch_ids", False),
+            verbose=self.verbose,
+            retrieve_mhe_batch_ids=True
         )
-        self.data, self.columns = data_preprocesor.fit_transform(max_id=self.hyperparameters["num_samples"], return_columns=True)
-        self.batch_ids = data_preprocesor.nb_batch_ids
+        self.data, self.columns, self.mhe_batch_ids = data_preprocesor.fit_transform(max_id=self.hyperparameters["num_samples"], return_columns=True)
+        self.nb_batch_ids = data_preprocesor.nb_batch_ids
         data_preprocesor = DataPreprocessor(
             csv_path=self.data_folder,
             binarizer=None,
@@ -147,41 +188,20 @@ class LCTMCurrentResults:
         data_preprocesor.columns_to_drop.remove("epoch")
         self.raw_data = data_preprocesor.fit_transform(max_id=self.hyperparameters["num_samples"], return_columns=False)
 
-    def plot_answer_types(self):
-        if self.nb_batch_ids == 0:
-            print("No batch ids in data. Not possible to get answer types.")
-            return
-        
-        fin_dataset = datasets.load_dataset("ibm-research/finqa", "en", split="train")
-
-        answers = clean_answer(fin_dataset)
-        answer_types = get_answer_formats(answers)
-
-        for c, idx in self.current_res.ids_by_class.items():
-            batch_ids = [int(i) for i in self.data_row[idx]["batch_ids"].split(",")]
-            answer_types_for_batch = [answer_types[i] for i in batch_ids]
-            unique_types, counts = np.unique(answer_types_for_batch, return_counts=True)
-            plt.figure(figsize=(8, 4))
-            plt.bar(unique_types, counts)
-            plt.xlabel("Answer Types")
-            plt.ylabel("Count")
-            if self.plot_titles:
-                plt.title(f"Answer Type Distribution for Cluster {c}")
-            else:
-                print(f"Answer Type Distribution for Cluster {c} - Run {self.run}")
-            plt.show()
-
     def _get_binarizer(self):
         binarizer_repr = self.hyperparameters.get('binarizer', '')
 
         if binarizer_repr.startswith('Binarizer('):
             binarizer_cls = Binarizer
+            self.binarizer_repr = "Binarizer"
 
         elif binarizer_repr.startswith('AugmentedBinarizer('):
             binarizer_cls = AugmentedBinarizer
+            self.binarizer_repr = "AugmentedBinarizer"
 
         elif binarizer_repr.startswith('MaxThresholdBinarizer('):
             binarizer_cls = MaxThresholdBinarizer
+            self.binarizer_repr = "MaxThresholdBinarizer"
 
         else:
             raise ValueError(f"Unknown binarizer type: {binarizer_repr}")
@@ -203,9 +223,32 @@ class LCTMCurrentResults:
         return self
     
     def __next__(self):
-        if self.current + 1 > self.max_runs:
+        if self.current + 1 >= self.max_runs:
+            print("Hello")
             raise StopIteration("No more runs to process.")
         self.current += 1
+        self._get_current()
+        return self.current_res
+    
+    def has_next(self):
+        """
+        Check if there is a next run.
+        """
+        return self.current + 1 < self.max_runs
+    
+    def __len__(self):
+        """
+        Get the number of runs.
+        """
+        return self.max_runs
+    
+    def __getitem__(self, idx):
+        """
+        Get the run at index idx.
+        """
+        if idx < 0 or idx >= self.max_runs:
+            raise IndexError("Index out of range.")
+        self.current = idx
         self._get_current()
         return self.current_res
     
@@ -231,9 +274,27 @@ class LCTMCurrentResults:
             X_t.append(x_t)
         X_t = np.concat(X_t, axis=1)
         return X_t 
+    
+    def get_threshold_index_by_feature(self):
+        X_T = []
+        if isinstance(self.data, list):
+            data = np.array(self.data)
+        else:
+            data = self.data
+        max_bits_per_feature = self.hyperparameters["max_bits_per_feature"]
+        nb_batch_ids = self.nb_batch_ids
+        assert (data.shape[1] - nb_batch_ids) % max_bits_per_feature == 0, f"The number of features binarized should be a multiple of max_bits_per_feature value. Got: {data.shape[1] - nb_batch_ids} and {max_bits_per_feature}"
+        nb_features = (data.shape[1] - nb_batch_ids) // max_bits_per_feature
+        for feature in range(nb_features):
+            x = data[:,feature * max_bits_per_feature + nb_batch_ids:(feature + 1) * max_bits_per_feature + nb_batch_ids]
+            x_t = np.argmax(x, axis=1, keepdims=True)
+            X_T.append(x_t)
+        X_T = np.concatenate(X_T, axis=1)
+        return X_T
  
     def plot_features_threshold(self, with_features_colors=False):
-        data = self.get_max_threshold_by_feature()
+        data = self.get_threshold_index_by_feature() if self.binarizer_repr == "MaxThresholdBinarizer" else self.get_max_threshold_by_feature()
+
         for c_id, idx in self.current_res.ids_by_class.items():
             plt.figure(figsize=(15, 9))
             x = np.arange(data.shape[1]).tolist() 
@@ -251,7 +312,8 @@ class LCTMCurrentResults:
             plt.show()
 
     def plot_threshold_features(self, with_features_colors=False):
-        data = self.get_max_threshold_by_feature()
+        data = self.get_threshold_index_by_feature() if self.binarizer_repr == "MaxThresholdBinarizer" else self.get_max_threshold_by_feature()
+
         for c_id, idx in self.current_res.ids_by_class.items():
             plt.figure(figsize=(15, 9))
             labels = list(self.columns)
@@ -275,7 +337,7 @@ class LCTMCurrentResults:
         """
         max_bits_per_feature = self.hyperparameters["max_bits_per_feature"]
         nb_batch_ids = self.nb_batch_ids
-        num_features = len(self.columns) - nb_batch_ids
+        num_features = len(self.columns)
 
         for c_id, clause_lists in self.current_res.interpretability_clauses.items():
             for clause_idx, clause in enumerate(clause_lists):
@@ -313,17 +375,13 @@ class LCTMCurrentResults:
         """
         For each class, plot the count of 1s and 0s for each of the first nb_batch_ids features in X.
         """
-        nb_batch_ids = self.nb_batch_ids # hyperparameters["nb_batch_ids"]
-        if nb_batch_ids == 0:
-            print("No batch ids in data.")
-            return
 
-        for class_name, X in self.current_res.grouped_samples.items():
-            X = np.array(X)
-            batch_features = X[:, :nb_batch_ids]
-            ones = np.sum(batch_features, axis=0)
+        for class_name, idx in self.current_res.ids_by_class.items():
+            cls_batch_ids = [self.mhe_batch_ids[i] for i in idx]
+            ones = np.sum(cls_batch_ids, axis=0)
+            nb_batch_ids = len(ones)
             if plot_zeroes:
-                zeros = batch_features.shape[0] - ones
+                zeros = cls_batch_ids.shape[0] - ones
             x = np.arange(nb_batch_ids)
             width = 0.35
             plt.figure(figsize=(10, 5))
@@ -345,18 +403,13 @@ class LCTMCurrentResults:
         """
         Plot the batch ids for each class on the same plot, using a different color for each class.
         """
-        nb_batch_ids = self.nb_batch_ids
-        if nb_batch_ids == 0:
-            print("No batch ids in data.")
-            return
-
         plt.figure(figsize=(10, 5))
-        colors = plt.cm.get_cmap('tab10', len(self.current_res.grouped_samples))
-        for idx, (class_name, X) in enumerate(self.current_res.grouped_samples.items()):
-            X = np.array(X)
-            batch_features = X[:, :nb_batch_ids]
+        colors = plt.cm.get_cmap('tab10', len(self.current_res.ids_by_class))
+        for idx, (class_name, cls_idx) in enumerate(self.current_res.ids_by_class.items()):
+            cls_batch_ids = np.array([self.mhe_batch_ids[i] for i in cls_idx])
+            nb_batch_ids = cls_batch_ids.shape[1]
             x = np.arange(nb_batch_ids)
-            plt.bar(x, batch_features.sum(axis=0), alpha=0.7, label=str(class_name), color=colors(idx))
+            plt.bar(x, cls_batch_ids.sum(axis=0), alpha=0.7, label=str(class_name), color=colors(idx))
         plt.xlabel("Batch Index")
         plt.ylabel("Count")
         if self.plot_titles:
@@ -395,6 +448,29 @@ class LCTMCurrentResults:
         plt.legend()
         plt.show()
 
+    def plot_answer_types(self, log_scale: bool = False):
+        fin_dataset = datasets.load_dataset("ibm-research/finqa", "en", split="train")
+
+        answers = list(map(clean_answer, fin_dataset))
+        answer_types = list(map(get_answer_formats, answers))
+
+        batch_ids = np.array([np.where(np.array(mh) == 1)[0] for mh in self.mhe_batch_ids])
+
+        for c, idx in self.current_res.ids_by_class.items():
+            cls_batch_ids = batch_ids[idx].flatten()
+            answer_types_for_batch = [answer_types[i] for i in cls_batch_ids]
+            unique_types, counts = np.unique(answer_types_for_batch, return_counts=True)
+            plt.figure(figsize=(8, 4))
+            if log_scale:
+                plt.yscale('log')
+            plt.bar(unique_types, counts)
+            plt.xlabel("Answer Types")
+            plt.ylabel("Count")
+            if self.plot_titles:
+                plt.title(f"Answer Type Distribution for Cluster {c}")
+            else:
+                print(f"Answer Type Distribution for Cluster {c} - Run {self.run}")
+            plt.show()
 
 class LCTMResult:
     def __init__(self, path, data: np.ndarray, hyperparameters: dict = None, verbose: bool = False):
