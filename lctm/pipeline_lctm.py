@@ -39,7 +39,7 @@ def pipeline_lctm(args: Namespace):
     hash_batch_ids = args.hash_batch_ids
 
     documents = {
-        "batch": "fetched_batch_data.csv",
+        "accumulation": "fetched_batch_data.csv",
         "epoch": "fetched_training_data.csv",
     }
     document = args.document if hasattr(args, 'document') else "batch"

@@ -12,12 +12,6 @@ from enum import Enum
 import re
 
 
-class DataPreprocessed(Enum):
-    """
-    Enum class to represent the data preprocessed.
-    """
-    BATCH = "batch"
-    EPOCH = "epoch"
 
 class LCTMResults:
     """
@@ -25,8 +19,6 @@ class LCTMResults:
     """
 
     def __init__(self, llm_name: str, verbose: bool = False, plot_titles: bool = False):
-        # assert data in DataPreprocessed._value2member_map_, "Data preprocessed not supported. Choose between 'batch' and 'epoch'"
-
         self.llm_name = llm_name
         self.model_dir = get_model_dir(model_name=llm_name, return_error=True)
         self.interpretability_clauses_dir = self.model_dir.joinpath("interpretability_clauses")
@@ -35,17 +27,6 @@ class LCTMResults:
         self.get_path = lambda run: f"{self.current_example}/{run}"
         self.plot_titles = plot_titles
 
-        # data = DataPreprocessed(data)
-        # if data == DataPreprocessed.BATCH:
-        #     self.data_folder = self.model_dir.joinpath("fetched_batch_data.csv")
-        # elif data == DataPreprocessed.EPOCH:
-        #     self.data_folder = self.model_dir.joinpath("fetched_training_data.csv")
-        # else:
-        #     raise ValueError("Data preprocessed not supported. Choose between 'batch' and 'epoch'")
-        
-        # if not self.data_folder.exists():
-        #     raise FileNotFoundError(f"Data folder does not exist at: {self.data_folder}.")
-        
         self.verbose = verbose
         self.init_current_example()
 
@@ -152,14 +133,14 @@ class LCTMCurrentResults:
         with open(hp_file, 'rb') as file:
             self.hyperparameters: Dict = pickle.load(file)
         
-        document = self.hyperparameters.get("document", "batch")
+        document = self.hyperparameters.get("document", "accumulation")
         self.hyperparameters["drop_batch_ids"] = self.hyperparameters.get("drop_batch_ids", False)
 
         if self.verbose:
             print(f"Current folder: {folder}")
             print(f"Hyperparameters file: {hp_file}")
             print(f"Hyperparameters: {self.hyperparameters}")
-        if document == "batch":
+        if document == "accumulation":
             self.data_folder = self.model_dir.joinpath("fetched_batch_data.csv")
         elif document == "epoch":
             self.data_folder = self.model_dir.joinpath("fetched_training_data.csv")

@@ -24,8 +24,9 @@ nvidia-smi
 pwd
 nvcc --version
 
+echo "Arguments passed to main_lctm_train.py: --model=${MODEL} --binarizer=${BINARIZER} ${HASH_BATCH_ID:+--hash_batch_id} --document=${DOCUMENT}"
 if [ "$HASH_BATCH_ID" = true ]; then
-    python main_lctm_train.py --model=${MODEL} --binarizer=${BINARIZER} --hash_batch_id
+    python main_lctm_train.py --model=${MODEL} --binarizer=${BINARIZER} --hash_batch_id --document=${DOCUMENT}
 else
-    python main_lctm_train.py --model=${MODEL} --binarizer=${BINARIZER}
+    python main_lctm_train.py --model=${MODEL} --binarizer=${BINARIZER} --document=${DOCUMENT}
 fi
