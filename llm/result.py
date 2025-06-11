@@ -13,6 +13,7 @@ class TrainingResult:
         self.training_batch_data = pd.read_csv(self.model_dir.joinpath("fetched_batch_data.csv")).iloc[1:,]
         self.training_epoch_data = pd.read_csv(self.model_dir.joinpath("fetched_training_data.csv")).iloc[1:,]
 
+        self.default_outliers = ["<-4σ", ">4σ"]
 
     def __repr__(self):
         return f"TrainingResult(model_name={self.model_name}, training_time={self.training_time}, loss={self.loss})"
@@ -155,17 +156,21 @@ class TrainingResult:
                 batch_ids[feature][shift] = dict(zip(unique, counts))
         return batch_ids
     
-    def plot_batch_ids_by_distribution_range(self, threshold: float = 0.1):
+    def plot_batch_ids_by_distribution_range(self, log_scale: bool = False, outliers: list = []):
         """
         Plot batch ids by distribution range.
         """
+        outliers = outliers if len(outliers) > 0 else self.default_outliers
         batch_ids = self.get_batch_ids_by_distribution_range()
         print("batch_ids", batch_ids)
         for feature, shifts in batch_ids.items():
             plt.figure(figsize=(12, 6))
             for shift, ids in shifts.items():
-                if len(ids) > 0:
+                if len(ids) > 0 and shift in outliers:
                     plt.bar(ids.keys(), ids.values(), label=shift)
+            
+            if log_scale:
+                plt.yscale('log')
             plt.xlabel('Batch IDs')
             plt.ylabel('Count')
             plt.title(f'Batch IDs by Distribution Range for {feature}')
@@ -173,7 +178,7 @@ class TrainingResult:
             plt.show()
 
     
-    def plot_answer_types(self, log_scale: bool = False, rolling_window: int = 0):
+    def plot_answer_types(self, log_scale: bool = False, rolling_window: int = 0, outliers: list = []):
         fin_dataset = datasets.load_dataset("ibm-research/finqa", "en", split="train")
 
         answers = list(map(clean_answer, fin_dataset))
@@ -185,22 +190,27 @@ class TrainingResult:
         all_unique_types, all_counts = np.unique(answer_types, return_counts=True)
 
         bar_width = 0.1
+        outliers = outliers if len(outliers) > 0 else self.default_outliers
         for feature, shifts in batch_ids.items():
-            nb_shifts = len(shifts.keys())
-            plt.figure(figsize=(20, 6))
+            plt.figure(figsize=(10, 6))
             if log_scale:
                 plt.yscale('log')
             x = np.arange(len(all_unique_types))
-
-            for w, (c, idx) in enumerate(shifts.items()):
-                cls_batch_ids = idx
-                answer_types_for_batch = [answer_types[i] for i in cls_batch_ids]
-                unique_types, counts = np.unique(answer_types_for_batch, return_counts=True)
-                unique_types_idx = [np.where(all_unique_types == ut)[0][0] for ut in unique_types]
-                bar = counts / all_counts[unique_types_idx] * 100 if len(counts) > 0 else 0.
-                plt.bar(np.array(unique_types_idx) + bar_width * w, bar, width=bar_width, label=f'Range {c}', alpha=0.7)
+            width = 0
+            for c, idx in shifts.items():
+                if len(idx) > 0 and c in outliers:
+                    cls_batch_ids = idx
+                    answer_types_for_batch = [answer_types[i] for i in cls_batch_ids]
+                    unique_types, counts = np.unique(answer_types_for_batch, return_counts=True)
+                    unique_types_idx = [np.where(all_unique_types == ut)[0][0] for ut in unique_types]
+                    bar = counts / all_counts[unique_types_idx] * 100 if len(counts) > 0 else 0.
+                    plt.bar(np.array(unique_types_idx) + bar_width * width, bar, width=bar_width, label=f'Range {c}', alpha=0.7)
+                    width += 1
             # plt.bar(x, all_counts, width=bar_width, label='All Answer Types', alpha=0.7)
-            plt.xticks(x + bar_width * nb_shifts //2 , all_unique_types)
+            if width == 0:
+                print(f"No outliers found for {feature} in the specified range.")
+                continue
+            plt.xticks(x + bar_width * (width - 1) / 2 , all_unique_types)
             plt.xlabel("Answer Types")
             plt.ylabel("Count (%)")
             plt.legend()
@@ -210,7 +220,26 @@ class TrainingResult:
             #     print(f"Answer Type Distribution for Cluster {c} - Run {self.run}")
             plt.show()
 
-    def plot_excepted_calibration_error(self):
+    def plot_answer_types_outliers(self, log_scale: bool = False, rolling_window: int = 0, outliers: list = []):
+        """
+        Plot answer types for outliers.
+        """
+        outliers = outliers if len(outliers) > 0 else self.default_outliers
+        batch_ids = self.get_batch_ids_by_distribution_range(rolling_window)
+        for feature, shifts in batch_ids.items():
+            plt.figure(figsize=(20, 6))
+            if log_scale:
+                plt.yscale('log')
+            for shift, ids in shifts.items() and shift in outliers:
+                if len(ids) > 0:
+                    plt.bar(ids.keys(), ids.values(), label=shift)
+            plt.xlabel('Batch IDs')
+            plt.ylabel('Count')
+            plt.title(f'Batch IDs by Distribution Range for {feature}')
+            plt.legend()
+            plt.show()
+
+    def plot_excepted_calibration_error(self, plot: bool = True):
         fin_dataset = datasets.load_dataset("ibm-research/finqa", "en", split="train")
         n = len(fin_dataset)
         data = self.training_batch_data[["accuracy_train","confidence_train","epoch"]]
@@ -220,13 +249,17 @@ class TrainingResult:
         ece_scores = data.groupby('epoch').apply(
             lambda x: np.abs(x['accuracy_train'], x['confidence_train']) * bin_size / n
         )
-        plt.figure(figsize=(10, 5))
-        plt.plot(data["epoch"], ece_scores)
+        if plot:
+            plt.figure(figsize=(10, 5))
+        plt.plot(data["epoch"], ece_scores, label=self.model_name, marker='o')
         plt.xlabel('Epoch')
         plt.ylabel('Expected Calibration Error')
         plt.title(f'Expected Calibration Error for {self.model_name}')
         plt.grid()
-        plt.show()
+        if plot:
+            plt.show()
+        else:
+            return ece_scores
 
     def plot_all(self):
         """

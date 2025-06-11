@@ -38,11 +38,18 @@ def pipeline_lctm(args: Namespace):
     binarizer = args.binarizer
     hash_batch_ids = args.hash_batch_ids
 
+    documents = {
+        "batch": "fetched_batch_data.csv",
+        "epoch": "fetched_training_data.csv",
+    }
+    document = args.document if hasattr(args, 'document') else "batch"
+    document = documents.get(documents, document)
+
     llm_dir = get_model_dir(model_name=llm_name)
     if not llm_dir.exists():
         raise FileNotFoundError(f"Model directory does not exist. Please run the training first. Tried to find it at: {llm_dir}")
     
-    csv_path = llm_dir.joinpath("fetched_batch_data.csv")
+    csv_path = llm_dir.joinpath(document)
     if not csv_path.exists():
         raise FileNotFoundError(f"CSV file does not exist. Please run the training first. Tryied to find it at: {csv_path}")
     
@@ -106,6 +113,7 @@ def pipeline_lctm(args: Namespace):
         'max_samples_per_sub_pattern': max_samples_per_sub_pattern,
         'pattern_search_perc': pattern_search_perc,
         'reset_guess_threshold': reset_guess_threshold,
+        'document': document,
         'epsilon': epsilon,
         'csv_path': csv_path,
         'num_samples': num_samples,

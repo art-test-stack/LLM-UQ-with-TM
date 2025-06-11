@@ -24,8 +24,8 @@ class LCTMResults:
     Class to handle the results of the LCTM model.
     """
 
-    def __init__(self, llm_name: str, data: Optional[str] = "batch", verbose: bool = False, plot_titles: bool = False):
-        assert data in DataPreprocessed._value2member_map_, "Data preprocessed not supported. Choose between 'batch' and 'epoch'"
+    def __init__(self, llm_name: str, verbose: bool = False, plot_titles: bool = False):
+        # assert data in DataPreprocessed._value2member_map_, "Data preprocessed not supported. Choose between 'batch' and 'epoch'"
 
         self.llm_name = llm_name
         self.model_dir = get_model_dir(model_name=llm_name, return_error=True)
@@ -35,16 +35,16 @@ class LCTMResults:
         self.get_path = lambda run: f"{self.current_example}/{run}"
         self.plot_titles = plot_titles
 
-        data = DataPreprocessed(data)
-        if data == DataPreprocessed.BATCH:
-            self.data_folder = self.model_dir.joinpath("fetched_batch_data.csv")
-        elif data == DataPreprocessed.EPOCH:
-            self.data_folder = self.model_dir.joinpath("fetched_training_data.csv")
-        else:
-            raise ValueError("Data preprocessed not supported. Choose between 'batch' and 'epoch'")
+        # data = DataPreprocessed(data)
+        # if data == DataPreprocessed.BATCH:
+        #     self.data_folder = self.model_dir.joinpath("fetched_batch_data.csv")
+        # elif data == DataPreprocessed.EPOCH:
+        #     self.data_folder = self.model_dir.joinpath("fetched_training_data.csv")
+        # else:
+        #     raise ValueError("Data preprocessed not supported. Choose between 'batch' and 'epoch'")
         
-        if not self.data_folder.exists():
-            raise FileNotFoundError(f"Data folder does not exist at: {self.data_folder}.")
+        # if not self.data_folder.exists():
+        #     raise FileNotFoundError(f"Data folder does not exist at: {self.data_folder}.")
         
         self.verbose = verbose
         self.init_current_example()
@@ -123,7 +123,7 @@ class LCTMResults:
         self.current_folder = self.interpretability_clauses_dir.joinpath(f"example_{self.current_example}")
         if self.verbose:
             print(f"Current folder: {self.current_folder}")
-            print(f"Data folder: {self.data_folder}")
+            # print(f"Data folder: {self.data_folder}")
         self.get_current_example()
         return self.current_res
     
@@ -152,15 +152,19 @@ class LCTMCurrentResults:
         with open(hp_file, 'rb') as file:
             self.hyperparameters: Dict = pickle.load(file)
         
+        document = self.hyperparameters.get("document", "batch")
+        self.hyperparameters["drop_batch_ids"] = self.hyperparameters.get("drop_batch_ids", False)
+
         if self.verbose:
             print(f"Current folder: {folder}")
             print(f"Hyperparameters file: {hp_file}")
             print(f"Hyperparameters: {self.hyperparameters}")
-        self.hyperparameters["drop_batch_ids"] = self.hyperparameters.get("drop_batch_ids", False)
-        if self.hyperparameters["drop_batch_ids"] or self.hyperparameters["nb_batch_ids"] > 0:
+        if document == "batch":
             self.data_folder = self.model_dir.joinpath("fetched_batch_data.csv")
-        else:
+        elif document == "epoch":
             self.data_folder = self.model_dir.joinpath("fetched_training_data.csv")
+        else:
+            raise ValueError(f"Document {document} not supported. Choose between 'batch' and 'epoch'.")
         
         self._get_binarizer()
         self._prepare_data()  # Parse the binarizer representation from hyperparameters
