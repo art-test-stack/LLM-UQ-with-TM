@@ -83,8 +83,7 @@ This project studies *epistemic uncertainty* in financial large language models 
 
 
 <div align="center">
-  <img src="resources/flowchart.png" alt="LLM-UQ-with-TM">
-  <height="300">
+  <img src="resources/flowchart.png" alt="LLM-UQ-with-TM" height="500">
 </div>
 
 <!-- ## Description
