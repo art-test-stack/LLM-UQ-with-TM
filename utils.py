@@ -39,3 +39,12 @@ def get_model_training_fetched_data_csv(model_name: str, training_type: str = "b
     
     return fetched_data_csv, model_dir
 
+import os
+mplstyle_file = os.getenv("MPLSTYLE")
+mplplots_dir = os.getenv("MPLPLOTS")
+
+pt = 1./72.27
+golden = (1 + 5 ** 0.5) / 2
+
+width = 337.33545 * pt
+height = width / golden

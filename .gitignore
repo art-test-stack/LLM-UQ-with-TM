@@ -16,6 +16,10 @@ notebooks/*
 lctm/interpretability_clauses/*
 !lctm/interpretability_clauses/README.md
 
+plots/*
+!plots/README.md
+!plots/utils.py
+
 pycuda_2025.1
 pycuda
 tmu

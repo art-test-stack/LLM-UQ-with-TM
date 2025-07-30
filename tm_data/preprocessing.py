@@ -163,7 +163,7 @@ class DataPreprocessor:
             verbose: bool = False,
         ):
         self.csv_path = csv_path
-        self.binarizer = binarizer
+        self.binarizer = binarizer # or MaxThresholdBinarizer(10)
         self.df = pd.read_csv(csv_path).iloc[1:]
         self.columns_to_drop = columns_to_drop if columns_to_drop is not None else []
         self._default_columns_to_drop()
@@ -226,7 +226,7 @@ class DataPreprocessor:
         X = df.to_numpy(copy=True)
         if max_id is not None:
             X = X[:max_id,:]
-            if is_batch_ids or self.retrieve_mhe_batch_ids:
+            if is_batch_ids and self.retrieve_mhe_batch_ids:
                 batch_ids_mhe = batch_ids_mhe[:max_id]
         if self.verbose:
             print("X.shape", X.shape)
