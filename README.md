@@ -8,21 +8,18 @@
   <ol>
     <li>
       <a href="#project-summary">Project Summary</a>
-      <!-- <ul>
-        <li><a href="#built-with">Built With</a></li>
-      </ul> -->
     </li>
     <li>
       <a href="#components">Components</a>
-      <li>
-        <a href="#1-finllm-training">1. FinLLM Training</a>
+      <ul>
+        <a href="#1-finllm-training"> FinLLM Training</a>
         <ul>
           <li><a href="#dataset">Dataset</a></li>
           <li><a href="#models">Models</a></li>
           <li><a href="#purpose">Purpose</a></li>
         </ul>
-      </li>
-      <li>
+      </ul>
+      <ul>
         <a href="#2-symbolic-clustering-of-training-dynamics-uncertainty-modeling">2. Symbolic Clustering of Training Dynamics (Uncertainty Modeling)</a>
         <ul>
           <li><a href="#feature-extraction">Feature Extraction</a></li>
@@ -30,7 +27,7 @@
           <li><a href="#regression-label-critic-tsetlin-machine-reglctm">Regression Label-Critic Tsetlin Machine (RegLCTM)</a></li>
           <li><a href="#interpretability">Interpretability</a></li>
         </ul>
-      </li>
+      </ul>
       <li>
         <a href="#getting-started">Getting Started</a>
         <ul>
@@ -42,16 +39,15 @@
       <li>
         <a href="#usage">Usage</a>
         <ul>
-          <li><a href="#training-the-finllm-on-hpc-cluster">Training the FinLLM on HPC Cluster</a></li>
-          <li><a href="#training-the-finllm-on-local-machine">Training the FinLLM on Local Machine</a></li>
+          <li><a href="#training-the-finllm">Training the FinLLM</a></li>
           <li><a href="#running-symbolic-clustering-reglctm">Running Symbolic Clustering (RegLCTM)</a></li>
           <li><a href="#interpreting-results">Interpreting Results</a></li>
         </ul>
       </li>
-      <li><a href="#citation-and-acknowledgements">Citation and Acknowledgements</a></li>
-      <li><a href="#contact">Contact</a></li>
       <li><a href="#references">References</a></li>
+      <li><a href="#citation-and-acknowledgements">Citation and Acknowledgements</a></li>
       <li><a href="#license">License</a></li>
+      <li><a href="#contact">Contact</a></li>
     </li>
   </ol>
 </details>
@@ -87,7 +83,7 @@ This project studies *epistemic uncertainty* in financial large language models 
 
 
 <div align="center">
-  <img src="resources/flowchart.pdf" alt="LLM-UQ-with-TM">
+  <img src="resources/flowchart.png" alt="LLM-UQ-with-TM">
 </div>
 
 <!-- ## Description
@@ -131,10 +127,21 @@ An overview of the full pipeline is shown in Figure 4.1 of the thesis. The top p
 
 ### Built With
 
-* [Python](https://www.python.org/)
-* [PyTorch](https://pytorch.org/)
-* [Transformers](https://huggingface.co/transformers/)
 
+<p align="center">
+  <a href="https://skillicons.dev">
+    <img src="https://skillicons.dev/icons?i=python,bash,pytorch,sklearn"/>
+  </a>
+</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/-HuggingFace-3B4252?style=for-the-badge&logo=huggingface&logoColor="/>
+	<img src="https://img.shields.io/badge/Matplotlib-%23ffffff.svg?style=for-the-badge&logo=matplotlib"/>
+	<img src="https://img.shields.io/badge/numpy-%23013243.svg?style=for-the-badge&logo=numpy&logoColor=white"/>
+    <img src="https://img.shields.io/badge/pandas-%23150458.svg?style=for-the-badge&logo=pandas&logoColor=white"/>
+  </a>
+</p>
+
+* [pyTsetlinMachine](https://github.com/cair/pyTsetlinMachine)
 
 ### Prerequisites
 
@@ -202,7 +209,9 @@ Config files include:
     
 ## Usage
 
-### Training the FinLLM on HPC Cluster
+### Training the FinLLM
+
+#### On HPC Cluster:
 
 To train the FinLLM on a High-Performance Computing (HPC) cluster, follow these steps:
 
@@ -217,8 +226,7 @@ To train the FinLLM on a High-Performance Computing (HPC) cluster, follow these 
   Option:
   - `-m`: model configuration to use for training. This should be the name of the configuration file without the `.yaml` extension (e.g. `finllm_config` for `config/finllm_config.yaml`) and without the `config/` prefix.
 
-
-### Training the FinLLM on Local Machine
+#### On Local Machine:
 
 If you prefer to run the FinLLM training on your local machine instead of an HPC cluster, you can use the `main_llm_train.py` script directly. Make sure you have the necessary environment set up as described in the [Installation](#installation) section.
 
@@ -277,10 +285,29 @@ This would read the gradient/metric features collected from training, binarize t
 
 ### Interpreting Results
 
-* After training, you can evaluate FinLLM performance on FinQA (exact-match, F1, etc.).
-* For clustering, inspect the generated clauses (often saved as text or JSON) to see what each cluster represents. For example, a cluster might be defined by “GradientMean < τ1 AND LossIncrease = 0”, etc. These clauses explain the model’s uncertainty behavior in ordinary terms.
+* After training, you can evaluate FinLLM performance on FinQA (exact-match, F1, etc.). [This](notebooks/training_res.ipynb) notebook provides an example of how to visualize training dynamics and performance metrics. For example, it retrive the figure below which illustrates the training loss over accumulation batches, for each models evaluated in the thesis. 
 
-I am currently working on cleaning the Jupyter notebook to visualize the results and provide more insights into the clusters. This will include visualizing the training dynamics, the clusters, and their interpretations. However, the current implementation already provides a the foundation for understanding FinLLM uncertainty through symbolic clustering; detailed in the thesis.
+
+<div align="center">
+  <img src="resources/train_loss.png" alt="Training Loss" width="600">
+</div>
+
+To see all the plot possible look at the functions implemented in `TrainingResult` class in [`llm/result.py`](llm/result.py). The class provides methods to plot training loss, validation loss, and other metrics over epochs or batches. It also provides methods to plot the training dynamics of the model, such as the gradient norms, absolute means, and other statistics collected during training.
+
+* For clustering, inspect the generated clauses through the figures ploted with [this](notebooks/interpret_reglctm.ipynb) notebook. To look more in details, in [`lctm/get_interpretability.py`](lctm/get_interpretability.py), look at `LCTMResults` class and more specially `LCTMCurrentResults` class to see the implemented plots. 
+
+For example, a cluster might be defined by “GradientMean < τ1 AND LossIncrease = 0”, etc. These clauses explain the model’s uncertainty behavior in ordinary terms.
+
+An example of a clause cluster is given below (the validation clause for class $\kappa$ of the RegLCTM model result presented in the thesis):
+
+<div align="center">
+  <img src="resources/interpretability.png" alt="Interpretability figure" width="600">
+</div>
+
+
+Due to both implementation and definition of LCTM, the clusters are not mutually exclusive. This means that a training step can belong to multiple clusters. This is a feature of the LCTM, as it allows to capture the complexity of the training dynamics. The clusters are defined by the clauses, which are logical expressions that can be true or false. Therefore, a training step can belong to multiple clusters if it satisfies multiple clauses. Moreover, the LCTM may not converge to different clusters, as it is a probabilistic model. Hence, `LCTMResults` class look at all the LCTMs runned for a given FinLLM model training recursively.
+
+<!-- I am currently working on cleaning the Jupyter notebook to visualize the results and provide more insights into the clusters. This will include visualizing the training dynamics, the clusters, and their interpretations. However, the current implementation already provides a the foundation for understanding FinLLM uncertainty through symbolic clustering; detailed in the thesis. -->
 
 ## References
 1. [Chen et al. (2021)](https://arxiv.org/abs/2109.00122) - FinQA: A Dataset of Numerical Reasoning over Financial Data.
@@ -313,7 +340,15 @@ Distributed under the Unlicense License. See `LICENSE.txt` for more information.
 
 ## Contact
 
-[![LinkedIn][linkedin-shield]][linkedin-url]
+<p align="center">
+	<a href="https://www.linkedin.com/in/arthur-testard/">
+		<img src="https://img.shields.io/badge/-LINKEDIN-0077B5?style=for-the-badge&logo=linkedin&logoColor=white">
+	</a>
+	<span>&nbsp;</span>
+	<a href="mailto:testardarthur@gmail.com">
+		<img src="https://img.shields.io/badge/-GMAIL-D14836?style=for-the-badge&logo=gmail&logoColor=white">
+	</a>
+</p>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 <!-- [![LinkedIn][linkedin-shield]][linkedin-url] -->

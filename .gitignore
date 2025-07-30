@@ -12,6 +12,8 @@ glove/*
 
 notebooks/*
 !notebooks/README.md
+!notebooks/training_res.ipynb
+!notebooks/interpret_reglctm.ipynb
 
 lctm/interpretability_clauses/*
 !lctm/interpretability_clauses/README.md
@@ -19,6 +21,7 @@ lctm/interpretability_clauses/*
 plots/*
 !plots/README.md
 !plots/utils.py
+!plots/L3B-i_18.json
 
 pycuda_2025.1
 pycuda
