@@ -52,6 +52,16 @@
   </ol>
 </details> -->
 
+## Project Summary
+
+This project studies *epistemic uncertainty* in financial large language models (FinLLMs) by analyzing their training dynamics.  We focus on LLMs fine-tuned on the FinQA dataset [[1]](#references), a financial question-answering benchmark requiring multi-step numerical reasoning.  The goal is to make training-time uncertainty *interpretable* and *diagnosable*. To this end, we propose a framework that extracts gradient-based features during LLM training and uses a symbolic model (the Regression Label-Critic Tsetlin Machine, or RegLCTM) to cluster training steps into human-readable uncertainty regimes.  Intuitively, changes in the model’s predictive entropy during training are linked to the gradients of the loss, and our pipeline (see figure below or Figure 4.1 in the thesis) collects statistics like gradient norms and losses over epochs and feeds them into RegLCTM. The outcome is a set of clause-based clusters that group similar uncertainty behaviors together. This two-part approach addresses the challenge of understanding *when* and *why* a FinLLM is uncertain, by combining powerful data-driven models (LLMs) with transparent rule-based analysis (Tsetlin Machines).
+
+
+<div align="center">
+  <img src="resources/flowchart.png" alt="LLM-UQ-with-TM" height="500">
+</div>
+
+
 ## Table of Contents
 
 - [Project Summary](#project-summary)
@@ -102,15 +112,6 @@
 
 <!-- <p align="right">(<a href="#readme-top">back to top</a>)</p> -->
 
-
-## Project Summary
-
-This project studies *epistemic uncertainty* in financial large language models (FinLLMs) by analyzing their training dynamics.  We focus on LLMs fine-tuned on the FinQA dataset [[1]](#references), a financial question-answering benchmark requiring multi-step numerical reasoning.  The goal is to make training-time uncertainty *interpretable* and *diagnosable*. To this end, we propose a framework that extracts gradient-based features during LLM training and uses a symbolic model (the Regression Label-Critic Tsetlin Machine, or RegLCTM) to cluster training steps into human-readable uncertainty regimes.  Intuitively, changes in the model’s predictive entropy during training are linked to the gradients of the loss, and our pipeline (see figure below or Figure 4.1 in the thesis) collects statistics like gradient norms and losses over epochs and feeds them into RegLCTM. The outcome is a set of clause-based clusters that group similar uncertainty behaviors together. This two-part approach addresses the challenge of understanding *when* and *why* a FinLLM is uncertain, by combining powerful data-driven models (LLMs) with transparent rule-based analysis (Tsetlin Machines).
-
-
-<div align="center">
-  <img src="resources/flowchart.png" alt="LLM-UQ-with-TM" height="500">
-</div>
 
 <!-- ## Description
 
