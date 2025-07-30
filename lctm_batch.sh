@@ -37,3 +37,6 @@ bash run_lctm.sh -m original_transformer.glove -b default -d epoch
 
 bash run_lctm.sh -m Llama-3.2-3B-2 -b max -d epoch
 bash run_lctm.sh -m Llama-3.2-3B-2 -b default -d epoch
+
+bash run_lctm.sh -m Llama-3.2-3B-2 -b max -d accumulation
+bash run_lctm.sh -m Llama-3.2-3B-2 -b default -d accumulation

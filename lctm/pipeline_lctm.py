@@ -43,7 +43,7 @@ def pipeline_lctm(args: Namespace):
         "epoch": "fetched_training_data.csv",
     }
     document = args.document if hasattr(args, 'document') else "batch"
-    document = documents.get(documents, document)
+    document = documents.get(document, document)
 
     llm_dir = get_model_dir(model_name=llm_name)
     if not llm_dir.exists():
@@ -60,23 +60,16 @@ def pipeline_lctm(args: Namespace):
     res_path = create_dir(interpretability_cl_storage)
     generate_res_name = lambda run, num_clauses, T, S: f"run_{run}_clauses_{num_clauses}_T_{T}_S_{S}.pkl"
 
-    # Create the grid for training
+    # Training hyperparameters
     num_clauses_l = [8]
     T_l = [5]
     S_l = [100]
-    # num_features = 600
-    # num_subpatterns = 10
     min_samples_per_sub_pattern = 700
     max_samples_per_sub_pattern = 700
     reset_guess_threshold = 200 # if LAs assigned to label decision stayed in a loop more than that threshold without being rewarded as all together at single loop. We resample and reinitialize these LAs with new random initial labels and states.
     pattern_search_perc = 1.0 # percentage of all labels learning automata that must be rewarded together to accept their labels
     epsilon =0.8 # percentage of how likely to penalize a wrong labeled decided from an LA. leaving a window for exploration (1 - epsilon). If all LAs penalized at once for example, they will be in a loop due to the symetric nature of the issue.
 
-    
-    # lctm_name = "example"
-    # res_path = Path(interpretability_cl_storage) / lctm_name
-    # if res_path.exists():
-    #     res_path.mkdir(parents=True, exist_ok=True)
 
     print("Result of interpretability clusters at:", str(res_path))
 
@@ -104,7 +97,6 @@ def pipeline_lctm(args: Namespace):
 
     permutation = np.random.permutation(X_train.shape[0])
     X_train = X_train[permutation, :]
-    # Store the hyperparameters
     hyperparameters = {
         'num_clauses': num_clauses_l,
         'T': T_l,
@@ -193,11 +185,7 @@ def train_lctm(
             all_samples.append(sample)
             all_labels.append(k)
         print('Cluster Size: ', len(v))
-        #print(v)    
         print('Cluster Included Patterns Info:')
-        # good = lctm.get_cluster_info(all_patterns, v)
-        # if good:
-            # good_counter += 1
         print('----------------------------------------')
     try:
         score = float(silhouette_score(all_samples, all_labels, metric='euclidean'))
