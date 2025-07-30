@@ -3,7 +3,7 @@
 <a id="readme-top"></a>
 
 <!-- TABLE OF CONTENTS -->
-<details>
+<!-- <details>
   <summary>Table of Contents</summary>
   <ol>
     <li>
@@ -50,8 +50,34 @@
       <li><a href="#contact">Contact</a></li>
     </li>
   </ol>
-</details>
+</details> -->
 
+## Table of Contents
+
+- [Project Summary](#project-summary)
+- [Components](#components)
+  - [1. FinLLM Training](#1-finllm-training)
+    - [Dataset](#dataset)
+    - [Models](#models)
+    - [Purpose](#purpose)
+  - [2. Symbolic Clustering of Training Dynamics (Uncertainty Modeling)](#2-symbolic-clustering-of-training-dynamics-uncertainty-modeling)
+    - [Feature Extraction](#feature-extraction)
+    - [Feature Binarization](#feature-binarization)
+    - [Regression Label-Critic Tsetlin Machine (RegLCTM)](#regression-label-critic-tsetlin-machine-reglctm)
+    - [Interpretability](#interpretability)
+- [Getting Started](#getting-started)
+  - [Built With](#built-with)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+- [Usage](#usage)
+  - [Training the FinLLM](#training-the-finllm)
+  - [Running Symbolic Clustering (RegLCTM)](#running-symbolic-clustering-reglctm)
+  - [Interpreting Results](#interpreting-results)
+- [Future Work / Roadmap](#future-work--roadmap)
+- [References](#references)
+- [Citation and Acknowledgements](#citation-and-acknowledgements)
+- [License](#license)
+- [Contact](#contact)
 
 
 <!-- CONTACT -->
@@ -308,6 +334,22 @@ An example of a clause cluster is given below (the validation clause for class $
 Due to both implementation and definition of LCTM, the clusters are not mutually exclusive. This means that a training step can belong to multiple clusters. This is a feature of the LCTM, as it allows to capture the complexity of the training dynamics. The clusters are defined by the clauses, which are logical expressions that can be true or false. Therefore, a training step can belong to multiple clusters if it satisfies multiple clauses. Moreover, the LCTM may not converge to different clusters, as it is a probabilistic model. Hence, `LCTMResults` class look recursively at all the LCTMs runned for a given FinLLM model training.
 
 <!-- I am currently working on cleaning the Jupyter notebook to visualize the results and provide more insights into the clusters. This will include visualizing the training dynamics, the clusters, and their interpretations. However, the current implementation already provides a the foundation for understanding FinLLM uncertainty through symbolic clustering; detailed in the thesis. -->
+
+## Future Work / Roadmap
+
+This project serves as a foundation for interpretable uncertainty quantification in FinLLMs using symbolic methods. Several directions can extend its impact:
+
+- **🧠 Extend to Larger LLMs**: Adapt the pipeline to support full-scale models like Llama-7B by incorporating gradient checkpointing and memory-efficient fine-tuning.
+- **🎛️ Multi-GPU Training**: Implement distributed training for FinLLMs using libraries like [Accelerate](https://huggingface.co/docs/accelerate/index) to scale up experiments.
+- **📈 Enhanced Metric Tracking**: Integrate more granular metrics (e.g., per-token loss, attention entropy) into feature extraction for richer uncertainty signals.
+- **🛠️ CPU-Compatible RegLCTM**: Modify `tmu` or use a fallback TM implementation to enable RegLCTM training on CPU machines.
+- **📊 Live Dashboards**: Add real-time visualizations or dashboards for training diagnostics and clause evolution (e.g., via TensorBoard or Gradio).
+- **🧪 Uncertainty-Aware Training**: Use symbolic clusters to adapt learning rate or model behavior during training in response to uncertainty.
+- **🔍 Cross-Task Evaluation**: Apply the RegLCTM-based interpretability pipeline to other domains (e.g., biomedical QA, scientific LLMs) and datasets beyond FinQA.
+- **📁 Prebuilt Datasets**: Offer cleaned and pre-binarized datasets for downstream symbolic learning researchers.
+- **📚 Formal Evaluation Metrics**: Define and publish new metrics for “interpretable uncertainty quality” using human studies or alignment with Bayesian confidence intervals.
+
+Want to contribute? See [issues](https://github.com/art-test-stack/LLM-UQ-with-TM/issues), open a pull request or [contact](#contact) me directly!
 
 ## References
 1. [Chen et al. (2021)](https://arxiv.org/abs/2109.00122) - FinQA: A Dataset of Numerical Reasoning over Financial Data.
