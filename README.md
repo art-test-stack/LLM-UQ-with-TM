@@ -273,14 +273,14 @@ This is a representative command (script names and flags may vary). It should: l
 
 ### Running Symbolic Clustering (RegLCTM)
 
-After (or during) training, the recorded features into two files for clustering. The features  monitored by epoch are registred under `models/finllm_3B.batch/fetched_training_data.csv`. The features monitored by batch are registered under `models/finllm_3B.batch/fetched_batch_data.csv`. These files contain the gradient statistics and evaluation metrics collected during training, which will be used for clustering.
+After (or during) training, the recorded features into two files for clustering. The features  monitored by epoch are registered under `models/finllm_3B.batch/fetched_training_data.csv`. The features monitored by batch are registered under `models/finllm_3B.batch/fetched_batch_data.csv`. These files contain the gradient statistics and evaluation metrics collected during training, which will be used for clustering.
 Then execute the RegLCTM clustering script. For example:
 
 > [!NOTE]
 > Make sure to run this script after training the FinLLM during a sufficient amount of epochs, as it relies on the features collected during training.
 
 > [!WARNING]
-> Make sure to have cuda on the device on which you run the script, as it uses the GPU for training the RegLCTM model ([`tmu`](https://github.com/cair/tmu/tree/main) dependency). If you do not have a GPU, the LCTM can not be handled by the current script. You can modify [`tmu`](https://github.com/cair/tmu/tree/main) script to run on CPU, but it will be significantly slower.
+> Make sure to have cuda on the device on which you run the script, as it uses the GPU for training the RegLCTM model ([`tmu`](https://github.com/cair/tmu/tree/main) dependency). If you do not have a GPU, the current script does not support running LCTM on CPU. You can modify [`tmu`](https://github.com/cair/tmu/tree/main) script to run on CPU, but it will be significantly slower.
 
 *Run the script on HPC Cluster:*
 ```bash
@@ -299,7 +299,7 @@ Then execute the RegLCTM clustering script. For example:
 Parameters:
 - `--model`: Name of the FinLLM model to use for clustering (e.g. `finllm_3B`).
 - `--binarizer`: Binarization method to use for the features. Current options are:
-  - `default`: Standard binarization method desbribed in the thesis.
+  - `default`: Standard binarization method described in the thesis.
   - `max`: Max Threshold binarization method described in the thesis.
 - `--document`: Source of the features to use for clustering. Current options are:
   - `accumulation`: Use features collected per batch (from `fetched_batch_data.csv`).
@@ -311,7 +311,7 @@ This would read the gradient/metric features collected from training, binarize t
 
 ### Interpreting Results
 
-* After training, you can evaluate FinLLM performance on FinQA (exact-match, F1, etc.). [This](notebooks/training_res.ipynb) notebook provides an example of how to visualize training dynamics and performance metrics. For example, it retrive the figure below which illustrates the training loss over accumulation batches, for each models evaluated in the thesis. 
+* After training, you can evaluate FinLLM performance on FinQA (exact-match, F1, etc.). [This](notebooks/training_res.ipynb) notebook provides an example of how to visualize training dynamics and performance metrics. For example, it retrieve the figure below which illustrates the training loss over accumulation batches, for each models evaluated in the thesis. 
 
 
 <div align="center">
@@ -331,7 +331,7 @@ An example of a clause cluster is given below (the validation clause for class $
 </div>
 
 
-Due to both implementation and definition of LCTM, the clusters are not mutually exclusive. This means that a training step can belong to multiple clusters. This is a feature of the LCTM, as it allows to capture the complexity of the training dynamics. The clusters are defined by the clauses, which are logical expressions that can be true or false. Therefore, a training step can belong to multiple clusters if it satisfies multiple clauses. Moreover, the LCTM may not converge to different clusters, as it is a probabilistic model. Hence, `LCTMResults` class look recursively at all the LCTMs runned for a given FinLLM model training.
+Due to both implementation and definition of LCTM, the clusters are not mutually exclusive. This means that a training step can belong to multiple clusters. This is a feature of the LCTM, as it allows to capture the complexity of the training dynamics. The clusters are defined by the clauses, which are logical expressions that can be true or false. Therefore, a training step can belong to multiple clusters if it satisfies multiple clauses. Moreover, the LCTM may not converge to different clusters, as it is a probabilistic model. Hence, `LCTMResults` class look recursively at all the LCTMs executed for a given FinLLM model training.
 
 <!-- I am currently working on cleaning the Jupyter notebook to visualize the results and provide more insights into the clusters. This will include visualizing the training dynamics, the clusters, and their interpretations. However, the current implementation already provides a the foundation for understanding FinLLM uncertainty through symbolic clustering; detailed in the thesis. -->
 
