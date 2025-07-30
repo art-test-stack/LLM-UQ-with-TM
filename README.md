@@ -84,6 +84,7 @@ This project studies *epistemic uncertainty* in financial large language models 
 
 <div align="center">
   <img src="resources/flowchart.png" alt="LLM-UQ-with-TM">
+  <width="600">
 </div>
 
 <!-- ## Description
@@ -305,7 +306,7 @@ An example of a clause cluster is given below (the validation clause for class $
 </div>
 
 
-Due to both implementation and definition of LCTM, the clusters are not mutually exclusive. This means that a training step can belong to multiple clusters. This is a feature of the LCTM, as it allows to capture the complexity of the training dynamics. The clusters are defined by the clauses, which are logical expressions that can be true or false. Therefore, a training step can belong to multiple clusters if it satisfies multiple clauses. Moreover, the LCTM may not converge to different clusters, as it is a probabilistic model. Hence, `LCTMResults` class look at all the LCTMs runned for a given FinLLM model training recursively.
+Due to both implementation and definition of LCTM, the clusters are not mutually exclusive. This means that a training step can belong to multiple clusters. This is a feature of the LCTM, as it allows to capture the complexity of the training dynamics. The clusters are defined by the clauses, which are logical expressions that can be true or false. Therefore, a training step can belong to multiple clusters if it satisfies multiple clauses. Moreover, the LCTM may not converge to different clusters, as it is a probabilistic model. Hence, `LCTMResults` class look recursively at all the LCTMs runned for a given FinLLM model training.
 
 <!-- I am currently working on cleaning the Jupyter notebook to visualize the results and provide more insights into the clusters. This will include visualizing the training dynamics, the clusters, and their interpretations. However, the current implementation already provides a the foundation for understanding FinLLM uncertainty through symbolic clustering; detailed in the thesis. -->
 
