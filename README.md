@@ -2,65 +2,16 @@
 
 <a id="readme-top"></a>
 
-<!-- TABLE OF CONTENTS -->
-<!-- <details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#project-summary">Project Summary</a>
-    </li>
-    <li>
-      <a href="#components">Components</a>
-      <ul>
-        <a href="#1-finllm-training"> FinLLM Training</a>
-        <ul>
-          <li><a href="#dataset">Dataset</a></li>
-          <li><a href="#models">Models</a></li>
-          <li><a href="#purpose">Purpose</a></li>
-        </ul>
-      </ul>
-      <ul>
-        <a href="#2-symbolic-clustering-of-training-dynamics-uncertainty-modeling">2. Symbolic Clustering of Training Dynamics (Uncertainty Modeling)</a>
-        <ul>
-          <li><a href="#feature-extraction">Feature Extraction</a></li>
-          <li><a href="#feature-binarization">Feature Binarization</a></li>
-          <li><a href="#regression-label-critic-tsetlin-machine-reglctm">Regression Label-Critic Tsetlin Machine (RegLCTM)</a></li>
-          <li><a href="#interpretability">Interpretability</a></li>
-        </ul>
-      </ul>
-      <li>
-        <a href="#getting-started">Getting Started</a>
-        <ul>
-          <li><a href="#built-with">Built With</a></li>
-          <li><a href="#prerequisites">Prerequisites</a></li>
-          <li><a href="#installation">Installation</a></li>
-        </ul>
-      </li>
-      <li>
-        <a href="#usage">Usage</a>
-        <ul>
-          <li><a href="#training-the-finllm">Training the FinLLM</a></li>
-          <li><a href="#running-symbolic-clustering-reglctm">Running Symbolic Clustering (RegLCTM)</a></li>
-          <li><a href="#interpreting-results">Interpreting Results</a></li>
-        </ul>
-      </li>
-      <li><a href="#references">References</a></li>
-      <li><a href="#citation-and-acknowledgements">Citation and Acknowledgements</a></li>
-      <li><a href="#license">License</a></li>
-      <li><a href="#contact">Contact</a></li>
-    </li>
-  </ol>
-</details> -->
 
 ## Project Summary
 
 This project studies *epistemic uncertainty* in financial large language models (FinLLMs) by analyzing their training dynamics.  We focus on LLMs fine-tuned on the FinQA dataset [[1]](#references), a financial question-answering benchmark requiring multi-step numerical reasoning.  The goal is to make training-time uncertainty *interpretable* and *diagnosable*. To this end, we propose a framework that extracts gradient-based features during LLM training and uses a symbolic model (the Regression Label-Critic Tsetlin Machine, or RegLCTM) to cluster training steps into human-readable uncertainty regimes.  Intuitively, changes in the model’s predictive entropy during training are linked to the gradients of the loss, and our pipeline (see figure below or Figure 4.1 in the thesis) collects statistics like gradient norms and losses over epochs and feeds them into RegLCTM. The outcome is a set of clause-based clusters that group similar uncertainty behaviors together. This two-part approach addresses the challenge of understanding *when* and *why* a FinLLM is uncertain, by combining powerful data-driven models (LLMs) with transparent rule-based analysis (Tsetlin Machines).
 
-
 <div align="center">
   <img src="resources/flowchart.png" alt="LLM-UQ-with-TM" height="500">
 </div>
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/art-test-stack/LLM-UQ-with-TM) More details are given under deepwiki article.
 
 ## Table of Contents
 
