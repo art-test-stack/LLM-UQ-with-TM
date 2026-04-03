@@ -318,7 +318,8 @@ This repository and its methodology are based on my Master's thesis at NTNU, *�
 ```bibtex
 @book{testard2025interpreting,
   title={Interpreting Epistemic Uncertainty in Financial LLMs: A Gradient-Based Analysis using Tsetlin Machines},
-  author={Testard, Arthur},
+  author={Testard, Arthur and Øztürk, Pinar and Abouzeid, Ahmed
+},
   year={2025},
   school={Norwegian University of Science and Technology (NTNU)}
 }
